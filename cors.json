@@ -1,7 +1,10 @@
 [
   {
-    "origin": ["https://kennedyd1988.github.io", "http://localhost:*"],
-    "method": ["GET"],
+    "origin": [
+      "https://kennedyd1988.github.io",
+      "http://localhost:*"
+    ],
+    "method": ["GET", "HEAD"],
     "maxAgeSeconds": 3600,
     "responseHeader": ["Content-Type"]
   }

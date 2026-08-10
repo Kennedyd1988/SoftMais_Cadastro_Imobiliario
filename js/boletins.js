@@ -498,15 +498,24 @@ async function abrirEditorBoletim(area, registro) {
   });
   if (campoCorrMesmo.checked) aplicarEnderecoCorrespondenciaDoProprietario();
 
-  // -------- Cálculo aproximado de área (retangular) --------
+  // -------- Cálculo aproximado de área (trapézio) --------
+  // Fórmula: média das duas frentes (Frente/Fundo) × média dos dois
+  // lados (Direito/Esquerdo) — é a aproximação padrão pra lotes
+  // urbanos, que raramente são retângulos perfeitos. Num lote
+  // perfeitamente quadrado/retangular (todos os lados iguais ou
+  // paralelos iguais dois a dois), dá exatamente base × altura.
   area.querySelectorAll(".btn-calc-area").forEach((botao) => {
     botao.addEventListener("click", () => {
       const prefixo = botao.dataset.prefixo;
       const frente = parseFloat(document.getElementById(`campo-${prefixo}-frente`).value) || 0;
       const fundo = parseFloat(document.getElementById(`campo-${prefixo}-fundo`).value) || 0;
-      const media = (frente + fundo) / 2;
-      document.getElementById(`campo-${prefixo}-total`).value = media > 0 ? media.toFixed(2) : "";
-      mostrarToast("Cálculo aproximado (retangular) aplicado — confira e ajuste se o terreno for irregular.", "info");
+      const ladoDireito = parseFloat(document.getElementById(`campo-${prefixo}-lado-direito`).value) || 0;
+      const ladoEsquerdo = parseFloat(document.getElementById(`campo-${prefixo}-lado-esquerdo`).value) || 0;
+      const mediaFrentes = (frente + fundo) / 2;
+      const mediaLados = (ladoDireito + ladoEsquerdo) / 2;
+      const areaCalculada = mediaFrentes * mediaLados;
+      document.getElementById(`campo-${prefixo}-total`).value = areaCalculada > 0 ? areaCalculada.toFixed(2) : "";
+      mostrarToast("Cálculo aproximado (trapézio: média das frentes × média dos lados) aplicado — confira e ajuste se o terreno for muito irregular.", "info");
     });
   });
 
@@ -605,7 +614,7 @@ function blocoMedidas(prefixo, r) {
     </div>
     <div class="linha-formulario">
       <div><label>Quant. Total m²</label><input type="number" step="0.01" id="campo-${prefixo}-total" value="${r[chaveBase + "Total"] || ""}"></div>
-      <div style="display:flex; align-items:flex-end"><button type="button" class="botao-secundario btn-calc-area" data-prefixo="${prefixo}">≈ Calcular (retangular)</button></div>
+      <div style="display:flex; align-items:flex-end"><button type="button" class="botao-secundario btn-calc-area" data-prefixo="${prefixo}">≈ Calcular (trapézio)</button></div>
     </div>
   `;
 }

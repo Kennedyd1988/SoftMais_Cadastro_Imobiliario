@@ -47,16 +47,61 @@ backend, GitHub Pages como hospedagem, PWA instalável.
    por padrão, o bucket do Storage não libera acesso "cross-origin" a
    partir do domínio do GitHub Pages, e o navegador bloqueia o
    `fetch()` que a exportação em PDF usa pra buscar a imagem do croqui.
-   Use o arquivo `cors.json` incluído nesta entrega (ajuste o domínio
-   dentro dele se for diferente do padrão) e rode, com o
-   [gcloud/gsutil](https://cloud.google.com/storage/docs/gsutil_install)
-   instalado e autenticado na conta do projeto:
-   ```
-   gsutil cors set cors.json gs://softmais-cadastro-imobiliario.firebasestorage.app
-   ```
-   Sem isso, o croqui continua sendo desenhado e salvo normalmente — só
-   não aparece dentro do PDF exportado (o app avisa isso com um toast
-   de erro específico quando acontece).
+
+   **Passo a passo pelo navegador, sem instalar nada no computador**
+   (usa o Cloud Shell, um terminal que já vem pronto dentro do Google
+   Cloud Console):
+
+   1. Acesse **https://console.cloud.google.com/**, logado com a
+      mesma conta Google usada no Firebase.
+   2. No topo da página, clique no seletor de projeto e escolha
+      **softmais-cadastro-imobiliario** (é o mesmo projeto do Firebase
+      — Firebase e Google Cloud compartilham o mesmo projeto por trás).
+   3. Clique no ícone de terminal **">_"** no canto superior direito
+      da tela (chama "Ativar o Cloud Shell"). Uma janela de terminal
+      abre na parte de baixo da tela — pode levar uns 30 segundos pra
+      carregar na primeira vez.
+   4. Nesse terminal, crie o arquivo de configuração colando o comando
+      abaixo (ele já cria o arquivo `cors.json` com o conteúdo certo —
+      não precisa copiar o arquivo do computador pra lá):
+      ```
+      cat > cors.json << 'EOF'
+      [
+        {
+          "origin": [
+            "https://kennedyd1988.github.io",
+            "http://localhost:*"
+          ],
+          "method": ["GET", "HEAD"],
+          "maxAgeSeconds": 3600,
+          "responseHeader": ["Content-Type"]
+        }
+      ]
+      EOF
+      ```
+      Pressione Enter depois de colar — o bloco inteiro (incluindo o
+      `EOF` do final) precisa ser colado de uma vez só.
+   5. Aplique a configuração no bucket com este comando (o Cloud Shell
+      já vem com o `gsutil` instalado e autenticado, não precisa fazer
+      login de novo):
+      ```
+      gsutil cors set cors.json gs://softmais-cadastro-imobiliario.firebasestorage.app
+      ```
+   6. Se aparecer `Setting CORS on gs://...` sem nenhuma mensagem de
+      erro depois, deu certo. Pra conferir, rode:
+      ```
+      gsutil cors get gs://softmais-cadastro-imobiliario.firebasestorage.app
+      ```
+      e confira se o domínio `kennedyd1988.github.io` aparece na
+      resposta.
+   7. Volte no app, abra um boletim que já tenha um croqui salvo e
+      exporte o PDF de novo — o croqui deve aparecer agora.
+
+   Sem esse passo, o croqui continua sendo desenhado e salvo
+   normalmente — só não aparece dentro do PDF exportado (o app avisa
+   isso com um toast de erro específico quando acontece). O arquivo
+   `cors.json` também está incluído nesta entrega, caso prefira usar o
+   `gsutil` já instalado no seu computador em vez do Cloud Shell.
 
 ## Estrutura de dados
 
@@ -245,3 +290,20 @@ atualização em campo:
     incluído nesta entrega); se não estiver configurado, o app agora
     avisa isso explicitamente ao tentar exportar, em vez de falhar
     calado.
+
+- **v1.4** — Três correções:
+  - **Cálculo de área "aproximado" estava errado**: o botão "≈
+    Calcular" fazia `(frente + fundo) / 2` — isto é, a *média* das duas
+    frentes, não uma área. Um lote de 5×5 dava "5" em vez de "25". A
+    fórmula correta agora usa os 4 lados (aproximação trapezoidal, o
+    padrão pra lotes urbanos que raramente são retângulos perfeitos):
+    `((frente + fundo) / 2) × ((lado direito + lado esquerdo) / 2)` —
+    num lote perfeitamente retangular isso dá exatamente base × altura.
+  - **Lista do combo com busca cortada** (ex: Tipo de Imóvel, Logradouro,
+    Quadra): a seção do formulário tinha `overflow: hidden` (usado só
+    pra arredondar os cantos visuais), que também cortava a lista
+    suspensa de resultados quando ela "vazava" pra fora da seção. O
+    arredondamento dos cantos agora é feito no cabeçalho da seção
+    (`<summary>`) em vez de depender desse corte.
+  - **Passo a passo do CORS** documentado abaixo de um jeito que não
+    exige instalar nada no computador (usa o Cloud Shell do navegador).

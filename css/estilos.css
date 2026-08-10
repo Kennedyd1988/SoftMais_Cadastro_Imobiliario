@@ -461,7 +461,17 @@ input:focus, select:focus, textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--raio, 10px);
   margin-bottom: 10px;
-  overflow: hidden;
+  /* Sem "overflow: hidden" aqui de propósito — isso cortava a lista
+     suspensa dos combos com busca (Logradouro, Quadra, Tipo de Imóvel
+     etc.), que "vaza" pra fora da seção quando há muitos resultados.
+     O arredondamento dos cantos é feito no <summary> abaixo, em vez
+     de depender do corte do container. */
+}
+.secao-formulario summary {
+  border-radius: var(--raio, 10px) var(--raio, 10px) 0 0;
+}
+.secao-formulario:not([open]) summary {
+  border-radius: var(--raio, 10px);
 }
 .secao-formulario summary {
   cursor: pointer;
