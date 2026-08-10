@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function estaLogado() {
+      return request.auth != null;
+    }
+
+    function dadosDoUsuario() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function ehAdministrador() {
+      return estaLogado() && dadosDoUsuario().papel == 'administrador';
+    }
+
+    function podeEditar() {
+      return estaLogado() &&
+        (dadosDoUsuario().papel == 'administrador' || dadosDoUsuario().papel == 'cadastrador');
+    }
+
+    function temAcessoEntidade(entidadeId) {
+      return ehAdministrador() ||
+        (entidadeId in dadosDoUsuario().unidadesGestoras);
+    }
+
+    // ---------- USUÁRIOS ----------
+    match /usuarios/{usuarioId} {
+      allow read: if estaLogado() && (request.auth.uid == usuarioId || ehAdministrador());
+      allow write: if ehAdministrador();
+    }
+
+    // ---------- PREFEITURAS / ENTES (multi-tenant) ----------
+    match /entidades/{entidadeId} {
+      allow read: if temAcessoEntidade(entidadeId);
+      allow update: if podeEditar() && temAcessoEntidade(entidadeId);
+      allow create, delete: if ehAdministrador();
+
+      // Histórico de auditoria — só administrador lê tudo; quem edita
+      // só pode criar linha nova (é assim que fica gravado); ninguém
+      // pode editar ou apagar uma linha já existente.
+      match /historico/{documentoId} {
+        allow read: if ehAdministrador();
+        allow create: if podeEditar() && temAcessoEntidade(entidadeId);
+        allow update, delete: if false;
+      }
+
+      // Boletins e sua subcoleção de co-proprietários
+      match /boletins/{boletimId} {
+        allow read: if temAcessoEntidade(entidadeId);
+        allow create, update: if podeEditar() && temAcessoEntidade(entidadeId);
+        allow delete: if ehAdministrador() && temAcessoEntidade(entidadeId);
+
+        match /coProprietarios/{coId} {
+          allow read: if temAcessoEntidade(entidadeId);
+          allow create, update, delete: if podeEditar() && temAcessoEntidade(entidadeId);
+        }
+      }
+
+      // Demais subcoleções (cadastros de apoio): zonas, distritos,
+      // tiposImovel, bairros, setores, quadras, logradouros,
+      // condominios, contribuintes
+      match /{colecao}/{documentoId} {
+        allow read: if temAcessoEntidade(entidadeId);
+        allow create, update: if podeEditar() && temAcessoEntidade(entidadeId);
+        allow delete: if podeEditar() && temAcessoEntidade(entidadeId);
+      }
+    }
+  }
+}
