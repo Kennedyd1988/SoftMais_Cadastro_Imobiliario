@@ -340,18 +340,25 @@ async function abrirEditorBoletim(area, registro) {
     ${criarSecaoFormulario("Croquis da Unidade (desenho)", `
       <div id="area-croqui">
         ${registro?.id
-          ? `<div class="quadro-croqui"><canvas id="canvas-croqui"></canvas></div>
-             <div class="ferramentas-croqui">
-               <input type="color" id="croqui-cor" value="#0f2947" title="Cor do traço">
-               <input type="range" id="croqui-espessura" min="1" max="10" value="3" title="Espessura do traço">
-               <button type="button" class="botao-secundario" id="btn-croqui-limpar">🧹 Limpar</button>
-               ${podeEditar ? `<button type="button" class="botao-primario" id="btn-croqui-salvar">💾 Salvar Croqui</button>` : ""}
-               <span class="texto-secundario" id="status-croqui"></span>
+          ? `<div id="preview-croqui-container">
+               ${r.croquiUrl ? `<img id="preview-croqui" src="${r.croquiUrl}" alt="Croqui da unidade" style="max-width:100%; border:1px solid var(--line); border-radius:8px; display:block;">` : `<p class="texto-secundario">Nenhum croqui desenhado ainda.</p>`}
              </div>
-             <p class="texto-secundario">Desenhe com o dedo (celular/tablet) ou o mouse — o quadriculado é só um guia, como no boletim em papel.</p>`
+             ${podeEditar ? `<button type="button" class="botao-secundario" id="btn-croqui-abrir" style="margin-top:10px">🖊️ ${r.croquiUrl ? "Refazer desenho" : "Desenhar croqui"}</button>` : ""}
+             <div id="editor-croqui" class="oculto" style="margin-top:10px">
+               <div class="quadro-croqui"><canvas id="canvas-croqui"></canvas></div>
+               <div class="ferramentas-croqui">
+                 <input type="color" id="croqui-cor" value="#0f2947" title="Cor do traço">
+                 <input type="range" id="croqui-espessura" min="1" max="10" value="3" title="Espessura do traço">
+                 <button type="button" class="botao-secundario" id="btn-croqui-limpar">🧹 Limpar</button>
+                 <button type="button" class="botao-secundario" id="btn-croqui-cancelar">Cancelar</button>
+                 <button type="button" class="botao-primario" id="btn-croqui-salvar">💾 Salvar Croqui</button>
+                 <span class="texto-secundario" id="status-croqui"></span>
+               </div>
+               <p class="texto-secundario">Desenhe com o dedo (celular/tablet) ou o mouse — o quadriculado é só um guia, como no boletim em papel.</p>
+             </div>`
           : `<p class="texto-secundario">Salve o boletim primeiro para poder desenhar o croqui.</p>`}
       </div>
-    `)}
+    `, true)}
 
     ${criarSecaoFormulario("Fotos do Imóvel", `
       <div id="area-fotos">
@@ -800,41 +807,46 @@ function numeroOuNull(id) {
 // usado pelas fotos. Um único arquivo por boletim (sobrescrito a cada
 // "Salvar Croqui"), referenciado pelo campo `croquiUrl` do boletim.
 async function inicializarCroqui(boletimId, podeEditar) {
+  const botaoAbrir = document.getElementById("btn-croqui-abrir");
+  if (!botaoAbrir) return; // sem permissão de edição — só mostra a pré-visualização, nada a fazer aqui
+
+  botaoAbrir.addEventListener("click", () => {
+    document.getElementById("editor-croqui").classList.remove("oculto");
+    botaoAbrir.classList.add("oculto");
+    // Só monta o canvas agora — nesse momento a seção já está aberta e
+    // visível na tela, então o canvas tem largura/altura reais. Montar
+    // isso antes (na hora de renderizar a página) é o que fazia o
+    // desenho não funcionar: o canvas ficava com tamanho 0x0 porque a
+    // seção "Croquis da Unidade" começa recolhida.
+    ativarCanvasCroqui(boletimId);
+  });
+
+  document.getElementById("btn-croqui-cancelar")?.addEventListener("click", () => {
+    document.getElementById("editor-croqui").classList.add("oculto");
+    botaoAbrir.classList.remove("oculto");
+  });
+}
+
+function ativarCanvasCroqui(boletimId) {
   const canvas = document.getElementById("canvas-croqui");
-  if (!canvas) return;
+  if (!canvas || canvas.dataset.ativado === "true") return; // evita ligar os eventos duas vezes
+  canvas.dataset.ativado = "true";
   const ctx = canvas.getContext("2d");
 
-  // Ajusta a resolução real do canvas ao tamanho exibido em tela,
-  // pra não ficar borrado em telas de alta densidade (celular/tablet).
-  function ajustarResolucaoCanvas() {
-    const proporcao = window.devicePixelRatio || 1;
-    const larguraExibida = canvas.clientWidth;
-    const alturaExibida = canvas.clientHeight;
-    const imagemAtual = canvas.width > 0 ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
-    canvas.width = larguraExibida * proporcao;
-    canvas.height = alturaExibida * proporcao;
-    ctx.scale(proporcao, proporcao);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    if (imagemAtual) ctx.putImageData(imagemAtual, 0, 0);
-  }
-  ajustarResolucaoCanvas();
-
-  // Carrega o croqui já salvo, se existir
-  try {
-    const doc = await colecaoEntidade("boletins").doc(boletimId).get();
-    const croquiUrl = doc.data()?.croquiUrl;
-    if (croquiUrl) {
-      const imagem = new Image();
-      imagem.crossOrigin = "anonymous";
-      imagem.onload = () => ctx.drawImage(imagem, 0, 0, canvas.clientWidth, canvas.clientHeight);
-      imagem.src = croquiUrl;
-    }
-  } catch (erro) {
-    console.warn("Não foi possível carregar o croqui salvo:", erro);
-  }
-
-  if (!podeEditar) return;
+  // Ajusta a resolução real do canvas ao tamanho exibido em tela, pra
+  // não ficar borrado em telas de alta densidade (celular/tablet).
+  // Sempre começa em branco — não tentamos recarregar o desenho salvo
+  // anteriormente aqui dentro do canvas (isso exigiria carregar a
+  // imagem do Firebase Storage via <img crossOrigin>, o que só
+  // funciona se o bucket tiver CORS liberado pro domínio do app; a
+  // pré-visualização acima, como <img> simples, já mostra o que foi
+  // salvo sem depender disso).
+  const proporcao = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * proporcao;
+  canvas.height = canvas.clientHeight * proporcao;
+  ctx.scale(proporcao, proporcao);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
 
   const campoCor = document.getElementById("croqui-cor");
   const campoEspessura = document.getElementById("croqui-espessura");
@@ -880,13 +892,25 @@ async function inicializarCroqui(boletimId, podeEditar) {
     const statusEl = document.getElementById("status-croqui");
     await executarComFeedback(evento.target, async () => {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) { mostrarToast("Não foi possível gerar a imagem do croqui. Tente novamente.", "erro"); return; }
       const caminho = `entidades/${estado.entidadeAtual}/boletins/${boletimId}/croqui.png`;
       const ref = storage.ref(caminho);
       await ref.put(blob, { contentType: "image/png" });
-      const url = await ref.getDownloadURL();
+      // Bate o cache da URL a cada salvamento — sem isso, o navegador
+      // pode continuar mostrando a versão antiga da imagem, já que o
+      // caminho do arquivo no Storage é sempre o mesmo.
+      const url = (await ref.getDownloadURL()) + "&cacheBust=" + Date.now();
       await colecaoEntidade("boletins").doc(boletimId).update({ croquiUrl: url, croquiCaminho: caminho });
       statusEl.textContent = "✅ Croqui salvo.";
       mostrarToast("Croqui salvo com sucesso.", "sucesso");
+
+      // Volta pra pré-visualização com o desenho recém-salvo
+      const container = document.getElementById("preview-croqui-container");
+      container.innerHTML = `<img id="preview-croqui" src="${url}" alt="Croqui da unidade" style="max-width:100%; border:1px solid var(--line); border-radius:8px; display:block;">`;
+      document.getElementById("editor-croqui").classList.add("oculto");
+      const botaoAbrir = document.getElementById("btn-croqui-abrir");
+      botaoAbrir.textContent = "🖊️ Refazer desenho";
+      botaoAbrir.classList.remove("oculto");
     }, "Salvando...");
   });
 }
@@ -1131,6 +1155,7 @@ async function exportarBoletimPDF(registroBase) {
   if (registro.croquiUrl) {
     try {
       const respostaImagem = await fetch(registro.croquiUrl);
+      if (!respostaImagem.ok) throw new Error(`HTTP ${respostaImagem.status}`);
       const blobImagem = await respostaImagem.blob();
       const base64Imagem = await new Promise((resolve) => {
         const leitor = new FileReader();
@@ -1143,6 +1168,7 @@ async function exportarBoletimPDF(registroBase) {
       y += 84;
     } catch (erro) {
       console.warn("Não foi possível incluir o croqui no PDF:", erro);
+      mostrarToast("O croqui não pôde ser incluído no PDF — provavelmente falta liberar o CORS do Firebase Storage para este site. Avise o administrador do sistema.", "erro");
     }
   }
 

@@ -42,6 +42,21 @@ backend, GitHub Pages como hospedagem, PWA instalável.
    índice composto na primeira vez que rodarem — se aparecer um erro no
    console do navegador (F12) com um link "create it here", é só
    clicar; o Firestore cria automaticamente.
+9. **CORS do Firebase Storage** (necessário só para o croqui aparecer
+   no PDF exportado — fotos e o resto do app funcionam sem isso):
+   por padrão, o bucket do Storage não libera acesso "cross-origin" a
+   partir do domínio do GitHub Pages, e o navegador bloqueia o
+   `fetch()` que a exportação em PDF usa pra buscar a imagem do croqui.
+   Use o arquivo `cors.json` incluído nesta entrega (ajuste o domínio
+   dentro dele se for diferente do padrão) e rode, com o
+   [gcloud/gsutil](https://cloud.google.com/storage/docs/gsutil_install)
+   instalado e autenticado na conta do projeto:
+   ```
+   gsutil cors set cors.json gs://softmais-cadastro-imobiliario.firebasestorage.app
+   ```
+   Sem isso, o croqui continua sendo desenhado e salvo normalmente — só
+   não aparece dentro do PDF exportado (o app avisa isso com um toast
+   de erro específico quando acontece).
 
 ## Estrutura de dados
 
@@ -206,3 +221,27 @@ atualização em campo:
     uma linha própria em vez de espremer. A seção de Medidas do Imóvel
     também foi reorganizada (Frente/Fundo numa linha, Lado
     Direito/Esquerdo em outra) para ficar mais legível.
+
+- **v1.3** — Correção do Croqui da Unidade, que não estava salvando
+  nem exportando:
+  - **Causa raiz nº 1**: a seção "Croquis da Unidade" começa recolhida
+    (como todas as seções secundárias do boletim); o canvas de desenho
+    era criado e dimensionado assim que a página carregava, num
+    momento em que ainda estava escondido — resultando num canvas de
+    tamanho 0x0, onde nada podia ser desenhado de verdade. Agora o
+    canvas só é criado no momento em que o usuário clica em
+    "Desenhar/Refazer croqui", quando a seção já está visível e com
+    tamanho real.
+  - **Causa raiz nº 2**: ao reabrir um boletim, o app tentava recarregar
+    o croqui salvo desenhando a imagem de volta dentro do canvas (via
+    `<img crossOrigin="anonymous">`), o que só funciona se o bucket do
+    Firebase Storage tiver CORS liberado pro domínio do app — e o
+    mesmo vale pra exportação em PDF, que busca a imagem via `fetch()`.
+    Sem CORS configurado, isso falhava silenciosamente. Agora o croqui
+    salvo é mostrado como uma pré-visualização simples (`<img>` comum,
+    sem exigir CORS) acima do botão de refazer o desenho — só a
+    exportação em PDF continua precisando do CORS liberado (ver item 9
+    da lista de configuração inicial, acima, e o arquivo `cors.json`
+    incluído nesta entrega); se não estiver configurado, o app agora
+    avisa isso explicitamente ao tentar exportar, em vez de falhar
+    calado.
