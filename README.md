@@ -307,3 +307,22 @@ atualização em campo:
     (`<summary>`) em vez de depender desse corte.
   - **Passo a passo do CORS** documentado abaixo de um jeito que não
     exige instalar nada no computador (usa o Cloud Shell do navegador).
+
+- **v1.5** — Três correções no Croqui e nas Fotos:
+  - **Croqui "sumindo" depois de salvar o boletim**: ao salvar, a tela
+    era recarregada com um objeto local montado a partir só dos campos
+    do formulário — que não incluíam `croquiUrl`/`croquiCaminho`/`fotos`
+    (esses são gravados à parte, direto no Storage + Firestore). O
+    croqui continuava salvo no banco, só sumia da tela. Agora, depois
+    de salvar, o app busca o documento completo e atualizado do
+    Firestore antes de reabrir o editor.
+  - **Fotos não apareciam no PDF exportado**: a exportação em PDF nunca
+    tinha uma seção de Fotos — foi adicionada (miniaturas em grade,
+    2 por linha, mantendo a proporção original de cada foto sem
+    esticar). Também precisa do CORS do Storage liberado (mesma
+    configuração já usada pelo croqui); se alguma foto falhar ao
+    carregar, o PDF avisa quantas não entraram, em vez de falhar calado.
+  - **Botão "Desfazer" no croqui**: antes só existia "Limpar" (apaga
+    tudo). Agora tem um botão "↩️ Desfazer" que volta só o último
+    traço (ou o último "Limpar"), guardando um histórico da sessão de
+    desenho na memória do navegador.

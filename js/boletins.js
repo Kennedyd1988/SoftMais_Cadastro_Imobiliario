@@ -349,6 +349,7 @@ async function abrirEditorBoletim(area, registro) {
                <div class="ferramentas-croqui">
                  <input type="color" id="croqui-cor" value="#0f2947" title="Cor do traço">
                  <input type="range" id="croqui-espessura" min="1" max="10" value="3" title="Espessura do traço">
+                 <button type="button" class="botao-secundario" id="btn-croqui-desfazer">↩️ Desfazer</button>
                  <button type="button" class="botao-secundario" id="btn-croqui-limpar">🧹 Limpar</button>
                  <button type="button" class="botao-secundario" id="btn-croqui-cancelar">Cancelar</button>
                  <button type="button" class="botao-primario" id="btn-croqui-salvar">💾 Salvar Croqui</button>
@@ -770,8 +771,14 @@ async function salvarBoletim(botao, area, registro, cadastros) {
 
     mostrarToast("Boletim salvo com sucesso.", "sucesso");
     const area2 = document.getElementById("area-conteudo");
-    const registroAtualizado = { id: boletimId, ...dados };
-    abrirEditorBoletim(area2, registroAtualizado);
+    // Busca o documento completo do Firestore em vez de reaproveitar
+    // só o "dados" local — "dados" tem apenas os campos do formulário;
+    // croqui e fotos são gravados à parte (upload direto pro Storage +
+    // update no Firestore) e não estavam nesse objeto, então reabrir o
+    // editor com ele fazia o croqui "sumir" da tela mesmo continuando
+    // salvo no banco.
+    const docSalvo = await colecaoEntidade("boletins").doc(boletimId).get();
+    abrirEditorBoletim(area2, { id: boletimId, ...docSalvo.data() });
   }, "Salvando...");
 }
 
@@ -861,6 +868,18 @@ function ativarCanvasCroqui(boletimId) {
   const campoEspessura = document.getElementById("croqui-espessura");
   let desenhando = false;
 
+  // -------- Histórico pra "Desfazer" (tipo Ctrl+Z) --------
+  // Guarda um retrato do canvas antes de cada traço novo começar (e
+  // antes de "Limpar"), pra poder voltar só um passo em vez de apagar
+  // tudo. Fica só na memória da sessão — não é salvo em lugar nenhum.
+  const pilhaDesfazer = [];
+  const LIMITE_HISTORICO_DESFAZER = 20;
+
+  function guardarEstadoParaDesfazer() {
+    pilhaDesfazer.push(canvas.toDataURL("image/png"));
+    if (pilhaDesfazer.length > LIMITE_HISTORICO_DESFAZER) pilhaDesfazer.shift();
+  }
+
   function posicaoRelativa(evento) {
     const retangulo = canvas.getBoundingClientRect();
     const ponto = evento.touches ? evento.touches[0] : evento;
@@ -869,6 +888,7 @@ function ativarCanvasCroqui(boletimId) {
 
   function iniciarTraco(evento) {
     evento.preventDefault();
+    guardarEstadoParaDesfazer();
     desenhando = true;
     const { x, y } = posicaoRelativa(evento);
     ctx.beginPath();
@@ -892,8 +912,20 @@ function ativarCanvasCroqui(boletimId) {
   canvas.addEventListener("touchmove", continuarTraco, { passive: false });
   canvas.addEventListener("touchend", finalizarTraco);
 
+  document.getElementById("btn-croqui-desfazer").addEventListener("click", () => {
+    if (pilhaDesfazer.length === 0) { mostrarToast("Não há nada para desfazer.", "info"); return; }
+    const estadoAnterior = pilhaDesfazer.pop();
+    const imagem = new Image();
+    imagem.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(imagem, 0, 0, canvas.clientWidth, canvas.clientHeight);
+    };
+    imagem.src = estadoAnterior;
+  });
+
   document.getElementById("btn-croqui-limpar").addEventListener("click", () => {
     if (!confirm("Limpar todo o desenho do croqui?")) return;
+    guardarEstadoParaDesfazer();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   });
 
@@ -998,6 +1030,30 @@ async function removerFotoBoletim(boletimId, indice) {
 // EXPORTAR BOLETIM EM PDF (todas as seções do BCI oficial, incluindo
 // croqui — busca os dados mais recentes do boletim antes de gerar)
 // -------------------------------------------------------------
+
+/** Baixa uma imagem (foto ou croqui) do Storage e devolve como base64, pronta pro doc.addImage do jsPDF. Exige CORS liberado no bucket. */
+async function baixarImagemBase64(url) {
+  const resposta = await fetch(url);
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+  const blob = await resposta.blob();
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(leitor.result);
+    leitor.onerror = () => reject(new Error("Falha ao ler a imagem baixada."));
+    leitor.readAsDataURL(blob);
+  });
+}
+
+/** Largura/altura reais de uma imagem base64 — usado pra encaixar a imagem no PDF sem esticar/distorcer. */
+function obterDimensoesImagem(base64) {
+  return new Promise((resolve) => {
+    const imagem = new Image();
+    imagem.onload = () => resolve({ largura: imagem.naturalWidth || 1, altura: imagem.naturalHeight || 1 });
+    imagem.onerror = () => resolve({ largura: 1, altura: 1 });
+    imagem.src = base64;
+  });
+}
+
 async function exportarBoletimPDF(registroBase) {
   mostrarToast("Gerando PDF...", "info");
 
@@ -1163,21 +1219,62 @@ async function exportarBoletimPDF(registroBase) {
   // -------- Croquis da Unidade (imagem) --------
   if (registro.croquiUrl) {
     try {
-      const respostaImagem = await fetch(registro.croquiUrl);
-      if (!respostaImagem.ok) throw new Error(`HTTP ${respostaImagem.status}`);
-      const blobImagem = await respostaImagem.blob();
-      const base64Imagem = await new Promise((resolve) => {
-        const leitor = new FileReader();
-        leitor.onload = () => resolve(leitor.result);
-        leitor.readAsDataURL(blobImagem);
-      });
-      novaLinhaSeNecessario(100);
+      const base64Croqui = await baixarImagemBase64(registro.croquiUrl);
+      const dimensoesCroqui = await obterDimensoesImagem(base64Croqui);
+      const alturaCaixa = 85;
+      const escalaCroqui = Math.min(larguraUtil / dimensoesCroqui.largura, alturaCaixa / dimensoesCroqui.altura);
+      const larguraDesenhoCroqui = dimensoesCroqui.largura * escalaCroqui;
+      const alturaDesenhoCroqui = dimensoesCroqui.altura * escalaCroqui;
+      novaLinhaSeNecessario(alturaCaixa + 15);
       tituloSecao("Croquis da Unidade");
-      doc.addImage(base64Imagem, "PNG", margemEsquerda, y, larguraUtil, 80);
-      y += 84;
+      doc.addImage(base64Croqui, "PNG", margemEsquerda, y, larguraDesenhoCroqui, alturaDesenhoCroqui);
+      y += alturaDesenhoCroqui + 4;
     } catch (erro) {
       console.warn("Não foi possível incluir o croqui no PDF:", erro);
       mostrarToast("O croqui não pôde ser incluído no PDF — provavelmente falta liberar o CORS do Firebase Storage para este site. Avise o administrador do sistema.", "erro");
+    }
+  }
+
+  // -------- Fotos do Imóvel --------
+  if (registro.fotos && registro.fotos.length > 0) {
+    novaLinhaSeNecessario(70);
+    tituloSecao(`Fotos do Imóvel (${registro.fotos.length})`);
+    const colunas = 2;
+    const espacamento = 5;
+    const larguraFoto = (larguraUtil - espacamento * (colunas - 1)) / colunas;
+    const alturaFoto = 60;
+    let coluna = 0;
+    let fotosComErro = 0;
+
+    for (const foto of registro.fotos) {
+      if (coluna === 0) novaLinhaSeNecessario(alturaFoto + espacamento);
+      const xFoto = margemEsquerda + coluna * (larguraFoto + espacamento);
+      doc.setDrawColor(215, 228, 240);
+      doc.rect(xFoto, y, larguraFoto, alturaFoto);
+      try {
+        const base64Foto = await baixarImagemBase64(foto.url);
+        const dimensoesFoto = await obterDimensoesImagem(base64Foto);
+        const escalaFoto = Math.min(larguraFoto / dimensoesFoto.largura, alturaFoto / dimensoesFoto.altura);
+        const larguraDesenhoFoto = dimensoesFoto.largura * escalaFoto;
+        const alturaDesenhoFoto = dimensoesFoto.altura * escalaFoto;
+        const deslocX = xFoto + (larguraFoto - larguraDesenhoFoto) / 2;
+        const deslocY = y + (alturaFoto - alturaDesenhoFoto) / 2;
+        doc.addImage(base64Foto, "JPEG", deslocX, deslocY, larguraDesenhoFoto, alturaDesenhoFoto);
+      } catch (erro) {
+        console.warn("Não foi possível incluir uma foto no PDF:", erro);
+        fotosComErro++;
+      }
+      coluna++;
+      if (coluna === colunas) {
+        coluna = 0;
+        y += alturaFoto + espacamento;
+      }
+    }
+    if (coluna !== 0) y += alturaFoto + espacamento;
+
+    if (fotosComErro > 0) {
+      linhaCampo("Aviso", `${fotosComErro} de ${registro.fotos.length} foto(s) não puderam ser incluídas no PDF — provavelmente falta liberar o CORS do Firebase Storage para este site.`);
+      mostrarToast(`${fotosComErro} foto(s) não puderam ser incluídas no PDF.`, "erro");
     }
   }
 
