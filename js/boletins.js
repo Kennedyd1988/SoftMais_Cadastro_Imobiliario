@@ -1067,7 +1067,13 @@ async function exportarBoletimPDF(registroBase) {
   const margemEsquerda = 14;
   const larguraUtil = 182;
   const valorOuTraco = (v) => (v === null || v === undefined || v === "" ? "-" : String(v));
-  const CORFUNDOCABECALHO = [238, 244, 251];
+  // Duas cores diferentes de propósito: a barra azul forte é só pro
+  // título de cada seção numerada do BCI; o cinza-azulado mais escuro
+  // é pro cabeçalho das "sub-tabelas" dentro da seção (ex: Frente/
+  // Fundo/Lado Direito, ou Natureza/Edificação) — separa visualmente
+  // os dois níveis, título de seção vs. título de coluna.
+  const CORBARRASECAO = [13, 79, 196];
+  const CORFUNDOCABECALHO = [92, 118, 146];
 
   function novaLinhaSeNecessario(alturaExtra = 8) {
     if (y > 283 - alturaExtra) { doc.addPage(); y = 15; }
@@ -1078,7 +1084,7 @@ async function exportarBoletimPDF(registroBase) {
   // encosta direto nela, como no boletim em papel.
   function tituloSecao(texto) {
     novaLinhaSeNecessario(16);
-    doc.setFillColor(13, 79, 196);
+    doc.setFillColor(...CORBARRASECAO);
     doc.rect(margemEsquerda, y, larguraUtil, 6.5, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9.5);
@@ -1094,12 +1100,14 @@ async function exportarBoletimPDF(registroBase) {
    * (rótulo pequeno no canto + valor embaixo, dentro de uma caixa com
    * borda). Cada item de `campos`:
    *   { rotulo, valor, prop (peso de largura, padrão 1),
-   *     cabecalho (true = célula de título cinza, texto centralizado
-   *     ou à esquerda, sem valor — usada pra nomes de coluna/linha,
-   *     tipo "Frente" ou "Área Terreno"), alinhar ("left"|"center",
-   *     só p/ cabecalho), semRotulo (true = mostra só o valor
-   *     centralizado, sem a etiqueta pequena em cima — usada embaixo
-   *     de uma linha de cabeçalho, tipo uma célula de tabela comum) }
+   *     cabecalho (true = célula de título com fundo cinza-azulado,
+   *     texto branco centralizado ou à esquerda, sem valor — usada pra
+   *     nomes de coluna/linha, tipo "Frente" ou "Área Terreno"),
+   *     alinhar ("left"|"center", só p/ cabecalho), semRotulo (true =
+   *     mostra só o valor, sem a etiqueta pequena em cima — usada
+   *     embaixo de uma linha de cabeçalho, tipo uma célula de tabela
+   *     comum), alinharValor ("center"|"right", só com semRotulo —
+   *     "right" alinha números à direita, como no formulário em papel) }
    */
   function linhaCaixas(campos, altura = 13) {
     novaLinhaSeNecessario(altura + 2);
@@ -1116,7 +1124,7 @@ async function exportarBoletimPDF(registroBase) {
         doc.rect(x, y, largura, altura, "FD");
         doc.setFontSize(6.8);
         doc.setFont(undefined, "bold");
-        doc.setTextColor(15, 41, 71);
+        doc.setTextColor(255, 255, 255);
         const linhasTexto = doc.splitTextToSize(campo.rotulo.toUpperCase(), largura - 2.4);
         const alinhamento = campo.alinhar || "center";
         const xTexto = alinhamento === "left" ? x + 1.6 : x + largura / 2;
@@ -1130,7 +1138,9 @@ async function exportarBoletimPDF(registroBase) {
           doc.setFontSize(8.2);
           doc.setFont(undefined, "normal");
           const linhasValor = doc.splitTextToSize(textoValor, largura - 2.4);
-          doc.text(linhasValor.slice(0, 2), x + largura / 2, y + altura / 2 + 1.3, { align: "center", maxWidth: largura - 2.4 });
+          const alinhamentoValor = campo.alinharValor === "right" ? "right" : "center";
+          const xValor = alinhamentoValor === "right" ? x + largura - 2 : x + largura / 2;
+          doc.text(linhasValor.slice(0, 2), xValor, y + altura / 2 + 1.3, { align: alinhamentoValor, maxWidth: largura - 2.4 });
         } else {
           doc.setFontSize(6.2);
           doc.setFont(undefined, "bold");
@@ -1271,19 +1281,19 @@ async function exportarBoletimPDF(registroBase) {
   ], 8);
   linhaCaixas([
     { rotulo: "Área Terreno", cabecalho: true, alinhar: "left", prop: 1.3 },
-    { valor: registro.areaTerrenoFrente, semRotulo: true, prop: 1 },
-    { valor: registro.areaTerrenoFundo, semRotulo: true, prop: 1 },
-    { valor: registro.areaTerrenoLadoDireito, semRotulo: true, prop: 1 },
-    { valor: registro.areaTerrenoLadoEsquerdo, semRotulo: true, prop: 1 },
-    { valor: registro.areaTerrenoTotal, semRotulo: true, prop: 1.2 },
+    { valor: registro.areaTerrenoFrente, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaTerrenoFundo, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaTerrenoLadoDireito, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaTerrenoLadoEsquerdo, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaTerrenoTotal, semRotulo: true, alinharValor: "right", prop: 1.2 },
   ], 9);
   linhaCaixas([
     { rotulo: "Área Construída", cabecalho: true, alinhar: "left", prop: 1.3 },
-    { valor: registro.areaConstruidaFrente, semRotulo: true, prop: 1 },
-    { valor: registro.areaConstruidaFundo, semRotulo: true, prop: 1 },
-    { valor: registro.areaConstruidaLadoDireito, semRotulo: true, prop: 1 },
-    { valor: registro.areaConstruidaLadoEsquerdo, semRotulo: true, prop: 1 },
-    { valor: registro.areaConstruidaTotal, semRotulo: true, prop: 1.2 },
+    { valor: registro.areaConstruidaFrente, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaConstruidaFundo, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaConstruidaLadoDireito, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaConstruidaLadoEsquerdo, semRotulo: true, alinharValor: "right", prop: 1 },
+    { valor: registro.areaConstruidaTotal, semRotulo: true, alinharValor: "right", prop: 1.2 },
   ], 9);
 
   // ---------- 11 — Demais Proprietários ----------
