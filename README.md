@@ -103,6 +103,30 @@ backend, GitHub Pages como hospedagem, PWA instalável.
    `cors.json` também está incluído nesta entrega, caso prefira usar o
    `gsutil` já instalado no seu computador em vez do Cloud Shell.
 
+10. **Se você atualizar os arquivos e a versão não mudar na tela**
+   (rodapé do menu ou tela de login continuam mostrando a versão
+   antiga), o motivo quase sempre é cache — nem sempre é o app:
+   - **Confirme que o arquivo realmente foi salvo no GitHub**: abra
+     `https://kennedyd1988.github.io/SEU-REPOSITORIO/js/core.js`
+     direto no navegador e procure a linha `VERSAO_APP` — se ela já
+     mostra o número novo ali, o problema é só cache local do
+     navegador (veja abaixo); se ainda mostra o número antigo, o
+     arquivo não chegou a ser publicado (confira se salvou no branch
+     certo, ou aguarde alguns minutos — o GitHub Pages pode levar até
+     alguns minutos pra publicar depois de um commit).
+   - **Force uma atualização "limpa" no navegador**: `Ctrl+Shift+R`
+     (Windows/Linux) ou `Cmd+Shift+R` (Mac) na página do app. Se ainda
+     não mudar, abra o DevTools (F12) → aba **Application** →
+     **Service Workers** → clique em **Unregister** → recarregue a
+     página normalmente.
+   - **Teste numa aba anônima/privada** — se lá a versão nova já
+     aparece, confirma que era cache do navegador principal.
+   - A partir da v1.7, o app já registra o service worker com
+     `updateViaCache: "none"` e a página tem cabeçalhos de "não
+     cachear" — isso reduz bastante esse tipo de atraso, mas alguns
+     navegadores/proxies ainda podem levar um tempinho pra perceber a
+     mudança.
+
 ## Estrutura de dados
 
 ```
@@ -349,3 +373,18 @@ atualização em campo:
   superscrito em alguns leitores de PDF — e ajustei células estreitas
   (ex: nome de distrito comprido) pra quebrar em duas linhas em vez de
   cortar o texto.
+
+- **v1.8** — Três ajustes:
+  - **Versão "presa" no navegador**: registrado o service worker com
+    `updateViaCache: "none"` e adicionados cabeçalhos de "não cachear"
+    na página — reduz o atraso pra uma atualização publicada aparecer
+    de fato pro usuário (veja o item 10 da configuração inicial, acima,
+    com o passo a passo caso ainda aconteça).
+  - **PDF: duas cores diferentes** — a barra de título de cada seção
+    numerada do BCI continua azul forte; o cabeçalho das "sub-tabelas"
+    dentro de cada seção (ex: Frente/Fundo/Lado Direito, Natureza/
+    Edificação, Nome/CPF/%) agora usa um cinza-azulado mais escuro com
+    texto branco, pra ficar visualmente claro que são dois níveis
+    diferentes de título.
+  - **Números da seção "10 — Medidas do Imóvel" alinhados à direita**,
+    como é padrão em campos numéricos de formulário.

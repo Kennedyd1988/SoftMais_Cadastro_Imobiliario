@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <!-- Evita que o navegador (ou algum proxy/CDN pelo caminho) sirva uma
+       cópia antiga em cache desta própria página — sem isso, uma
+       atualização publicada no GitHub Pages pode demorar a aparecer
+       mesmo depois de recarregar. -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>SOFT+ Cadastro Imobiliário</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0d4fc4">
@@ -10,7 +17,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/estilos.css?v=8">
+  <link rel="stylesheet" href="css/estilos.css?v=9">
 </head>
 <body>
 
@@ -88,15 +95,15 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
-  <script src="js/firebase-config.js?v=8"></script>
-  <script src="js/codigos-bci.js?v=8"></script>
-  <script src="js/core.js?v=8"></script>
-  <script src="js/cadastros-apoio.js?v=8"></script>
-  <script src="js/localizacao.js?v=8"></script>
-  <script src="js/contribuintes.js?v=8"></script>
-  <script src="js/boletins.js?v=8"></script>
-  <script src="js/importacao-legado.js?v=8"></script>
-  <script src="js/usuarios.js?v=8"></script>
+  <script src="js/firebase-config.js?v=9"></script>
+  <script src="js/codigos-bci.js?v=9"></script>
+  <script src="js/core.js?v=9"></script>
+  <script src="js/cadastros-apoio.js?v=9"></script>
+  <script src="js/localizacao.js?v=9"></script>
+  <script src="js/contribuintes.js?v=9"></script>
+  <script src="js/boletins.js?v=9"></script>
+  <script src="js/importacao-legado.js?v=9"></script>
+  <script src="js/usuarios.js?v=9"></script>
 
   <script>
     // -------- Login --------
@@ -178,7 +185,12 @@
     // -------- Service Worker (estratégia network-first) --------
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("service-worker.js");
+        // "updateViaCache: none" impede o navegador de servir uma
+        // cópia HTTP em cache do próprio service-worker.js — sem
+        // isso, o navegador pode continuar rodando a versão antiga
+        // do service worker por até 24h mesmo depois de recarregar a
+        // página, mascarando qualquer atualização publicada no app.
+        navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" });
       });
     }
   </script>
