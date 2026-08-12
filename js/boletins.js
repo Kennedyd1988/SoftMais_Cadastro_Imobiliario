@@ -1067,46 +1067,88 @@ async function exportarBoletimPDF(registroBase) {
   const margemEsquerda = 14;
   const larguraUtil = 182;
   const valorOuTraco = (v) => (v === null || v === undefined || v === "" ? "-" : String(v));
+  const CORFUNDOCABECALHO = [238, 244, 251];
 
   function novaLinhaSeNecessario(alturaExtra = 8) {
-    if (y > 280 - alturaExtra) { doc.addPage(); y = 15; }
+    if (y > 283 - alturaExtra) { doc.addPage(); y = 15; }
   }
 
+  // Barra azul cheia — só pra título de seção (mantém o visual que
+  // você aprovou), sem espaço embaixo: a primeira linha de caixas
+  // encosta direto nela, como no boletim em papel.
   function tituloSecao(texto) {
-    novaLinhaSeNecessario(12);
+    novaLinhaSeNecessario(16);
     doc.setFillColor(13, 79, 196);
-    doc.rect(margemEsquerda, y, larguraUtil, 7, "F");
+    doc.rect(margemEsquerda, y, larguraUtil, 6.5, "F");
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     doc.setFont(undefined, "bold");
-    doc.text(texto, margemEsquerda + 2, y + 5);
+    doc.text(texto, margemEsquerda + 2, y + 4.6);
     doc.setTextColor(0, 0, 0);
-    y += 10;
+    y += 6.5;
   }
 
-  // Desenha uma tabela de verdade (cabeçalho azul + grade de linhas),
-  // no espírito das caixinhas do boletim em papel — e não mais como
-  // texto solto "rótulo: valor" empilhado. `cabecalhos` são os títulos
-  // das colunas; `linhas` é uma matriz de valores.
-  function tabela(cabecalhos, linhas, larguraColunas = null) {
-    const configuracaoColunas = {};
-    if (larguraColunas) {
-      larguraColunas.forEach((largura, indice) => {
-        configuracaoColunas[indice] = { cellWidth: largura };
-      });
-    }
-    doc.autoTable({
-      startY: y,
-      margin: { left: margemEsquerda, right: 210 - margemEsquerda - larguraUtil },
-      head: [cabecalhos],
-      body: linhas,
-      theme: "grid",
-      styles: { fontSize: 8.5, cellPadding: 2.2, textColor: [15, 41, 71], lineColor: [215, 228, 240], lineWidth: 0.15, overflow: "linebreak" },
-      headStyles: { fillColor: [13, 79, 196], textColor: 255, fontStyle: "bold", fontSize: 8 },
-      columnStyles: configuracaoColunas,
-      tableWidth: larguraUtil,
+  /**
+   * Desenha uma linha de caixas grudadas lado a lado — é o "tijolo"
+   * de todo o formulário, reproduzindo o visual do BCI em papel
+   * (rótulo pequeno no canto + valor embaixo, dentro de uma caixa com
+   * borda). Cada item de `campos`:
+   *   { rotulo, valor, prop (peso de largura, padrão 1),
+   *     cabecalho (true = célula de título cinza, texto centralizado
+   *     ou à esquerda, sem valor — usada pra nomes de coluna/linha,
+   *     tipo "Frente" ou "Área Terreno"), alinhar ("left"|"center",
+   *     só p/ cabecalho), semRotulo (true = mostra só o valor
+   *     centralizado, sem a etiqueta pequena em cima — usada embaixo
+   *     de uma linha de cabeçalho, tipo uma célula de tabela comum) }
+   */
+  function linhaCaixas(campos, altura = 13) {
+    novaLinhaSeNecessario(altura + 2);
+    const somaProp = campos.reduce((soma, c) => soma + (c.prop || 1), 0);
+    let x = margemEsquerda;
+    doc.setLineWidth(0.2);
+    doc.setDrawColor(150, 170, 200);
+
+    campos.forEach((campo) => {
+      const largura = (larguraUtil * (campo.prop || 1)) / somaProp;
+
+      if (campo.cabecalho) {
+        doc.setFillColor(...CORFUNDOCABECALHO);
+        doc.rect(x, y, largura, altura, "FD");
+        doc.setFontSize(6.8);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(15, 41, 71);
+        const linhasTexto = doc.splitTextToSize(campo.rotulo.toUpperCase(), largura - 2.4);
+        const alinhamento = campo.alinhar || "center";
+        const xTexto = alinhamento === "left" ? x + 1.6 : x + largura / 2;
+        const yInicio = y + altura / 2 - ((linhasTexto.length - 1) * 2.6) / 2 + 1.3;
+        doc.text(linhasTexto, xTexto, yInicio, { align: alinhamento, maxWidth: largura - 2.4 });
+      } else {
+        doc.rect(x, y, largura, altura);
+        doc.setTextColor(15, 41, 71);
+        const textoValor = valorOuTraco(campo.valor);
+        if (campo.semRotulo) {
+          doc.setFontSize(8.2);
+          doc.setFont(undefined, "normal");
+          const linhasValor = doc.splitTextToSize(textoValor, largura - 2.4);
+          doc.text(linhasValor.slice(0, 2), x + largura / 2, y + altura / 2 + 1.3, { align: "center", maxWidth: largura - 2.4 });
+        } else {
+          doc.setFontSize(6.2);
+          doc.setFont(undefined, "bold");
+          doc.setTextColor(92, 118, 146);
+          doc.text(campo.rotulo.toUpperCase(), x + 1.6, y + 3.4, { maxWidth: largura - 2.4 });
+          doc.setFontSize(8.2);
+          doc.setFont(undefined, "normal");
+          doc.setTextColor(15, 41, 71);
+          // Até 2 linhas de valor (ex: um nome de distrito comprido
+          // numa coluna estreita não corta mais no meio da palavra).
+          const linhasValor = doc.splitTextToSize(textoValor, largura - 2.4);
+          doc.text(linhasValor.slice(0, 2), x + 1.6, y + 7.2, { maxWidth: largura - 2.4 });
+        }
+      }
+      x += largura;
     });
-    y = doc.lastAutoTable.finalY + 5;
+    doc.setTextColor(0, 0, 0);
+    y += altura;
   }
 
   function textoLivre(texto) {
@@ -1124,124 +1166,240 @@ async function exportarBoletimPDF(registroBase) {
   y += 6;
   doc.setFontSize(11);
   doc.text("Boletim de Cadastro Imobiliário (BCI)", margemEsquerda, y);
-  y += 9;
+  y += 8;
 
+  // ---------- 01/02 — Inscrição Imobiliária ----------
   tituloSecao("01/02 — Inscrição Imobiliária");
-  tabela(
-    ["Inscrição Imobiliária Atual", "Inscrição Imobiliária Anterior", "Status"],
-    [[valorOuTraco(registro.inscricaoImobiliaria), valorOuTraco(registro.inscricaoImobiliariaAnterior), registro.statusAtualizacao === "atualizado" ? "Atualizado" : "Pendente de atualização"]]
-  );
+  linhaCaixas([
+    { rotulo: "Inscrição Imobiliária Atual", valor: registro.inscricaoImobiliaria, prop: 1.4 },
+    { rotulo: "Inscrição Imobiliária Anterior", valor: registro.inscricaoImobiliariaAnterior, prop: 1.4 },
+    { rotulo: "Status", valor: registro.statusAtualizacao === "atualizado" ? "Atualizado" : "Pendente", prop: 1 },
+  ]);
 
+  // ---------- 03 — Localização do Imóvel ----------
   tituloSecao("03 — Localização do Imóvel");
-  tabela(
-    ["Logradouro / Número", "Complemento", "Bairro", "CEP"],
-    [[
-      `${registro.logradouroTipo || ""} ${registro.logradouroNome || ""}, ${registro.numero || "s/n"}`.trim(),
-      valorOuTraco(registro.complemento),
-      valorOuTraco(registro.bairroNome),
-      valorOuTraco(registro.cep),
-    ]]
-  );
-  tabela(
-    ["Distrito", "Setor", "Quadra", "Lote", "Unidade", "Condomínio"],
-    [[valorOuTraco(registro.distritoNome), valorOuTraco(registro.setorNome), valorOuTraco(registro.quadraNome), valorOuTraco(registro.lote), valorOuTraco(registro.unidade), valorOuTraco(registro.condominioNome)]]
-  );
-  tabela(
-    ["Tipo de Imóvel", "Nº Medidor Água", "Nº Medidor Energia"],
-    [[valorOuTraco(registro.tipoImovelNome), valorOuTraco(registro.medidorAgua), valorOuTraco(registro.medidorEnergia)]]
-  );
+  linhaCaixas([
+    { rotulo: "Logradouro", valor: `${registro.logradouroTipo || ""} ${registro.logradouroNome || ""}`.trim(), prop: 2.4 },
+    { rotulo: "Número", valor: registro.numero, prop: 1 },
+  ]);
+  linhaCaixas([
+    { rotulo: "CEP", valor: registro.cep, prop: 1 },
+    { rotulo: "Distrito", valor: registro.distritoNome, prop: 1 },
+    { rotulo: "Setor", valor: registro.setorNome, prop: 1 },
+    { rotulo: "Quadra", valor: registro.quadraNome, prop: 1 },
+    { rotulo: "Lote", valor: registro.lote, prop: 0.8 },
+    { rotulo: "Unidade", valor: registro.unidade, prop: 0.8 },
+    { rotulo: "Condomínio", valor: registro.condominioNome, prop: 1.3 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Complemento", valor: registro.complemento, prop: 2 },
+    { rotulo: "Bairro", valor: registro.bairroNome, prop: 1.4 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Tipo de Imóvel", valor: registro.tipoImovelNome, prop: 1.6 },
+    { rotulo: "Nº Medidor Água", valor: registro.medidorAgua, prop: 1 },
+    { rotulo: "Nº Medidor Energia", valor: registro.medidorEnergia, prop: 1 },
+  ]);
 
+  // ---------- Caracterização do Imóvel ----------
   tituloSecao("Caracterização do Imóvel");
-  tabela(["Natureza", "Edificação"], [[valorOuTraco(registro.naturezaNome), valorOuTraco(registro.edificacaoNome)]]);
+  linhaCaixas([
+    { rotulo: "Natureza", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Edificação", cabecalho: true, alinhar: "left", prop: 1 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.naturezaNome, semRotulo: true, prop: 1 },
+    { valor: registro.edificacaoNome, semRotulo: true, prop: 1 },
+  ]);
 
+  // ---------- 04 — Dados do Proprietário ----------
   tituloSecao("04 — Dados do Proprietário");
-  tabela(
-    ["Nome", "CPF/CNPJ", "Telefone", "Celular", "E-mail"],
-    [[valorOuTraco(registro.proprietarioNome), valorOuTraco(registro.proprietarioCpfCnpj), valorOuTraco(registro.proprietarioTelefone), valorOuTraco(registro.proprietarioCelular), valorOuTraco(registro.proprietarioEmail)]]
-  );
+  linhaCaixas([
+    { rotulo: "CPF/CNPJ", valor: registro.proprietarioCpfCnpj, prop: 1 },
+    { rotulo: "Nome", valor: registro.proprietarioNome, prop: 2 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Telefone", valor: registro.proprietarioTelefone, prop: 1 },
+    { rotulo: "Celular", valor: registro.proprietarioCelular, prop: 1 },
+    { rotulo: "E-mail", valor: registro.proprietarioEmail, prop: 1.6 },
+  ]);
 
+  // ---------- 05 — Dados do Responsável pelo Pagamento ----------
   tituloSecao("05 — Dados do Responsável pelo Pagamento");
-  tabela(
-    ["Nome", "CPF/CNPJ", "Telefone", "Celular"],
-    [[valorOuTraco(registro.responsavelNome), valorOuTraco(registro.responsavelCpfCnpj), valorOuTraco(registro.responsavelTelefone), valorOuTraco(registro.responsavelCelular)]]
-  );
+  linhaCaixas([
+    { rotulo: "CPF/CNPJ", valor: registro.responsavelCpfCnpj, prop: 1 },
+    { rotulo: "Nome", valor: registro.responsavelNome, prop: 2 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Telefone", valor: registro.responsavelTelefone, prop: 1 },
+    { rotulo: "Celular", valor: registro.responsavelCelular, prop: 1 },
+    { rotulo: "E-mail", valor: registro.responsavelEmail, prop: 1.6 },
+  ]);
 
+  // ---------- 06 — Endereço para Correspondência ----------
   tituloSecao("06 — Endereço para Correspondência");
   if (registro.corrMesmoProprietario) {
-    textoLivre("Mesmo endereço cadastrado do proprietário.");
+    linhaCaixas([{ rotulo: "Endereço", valor: "Mesmo endereço cadastrado do proprietário", prop: 1 }]);
   } else {
-    tabela(
-      ["Endereço", "Número", "Bairro", "CEP"],
-      [[valorOuTraco(registro.corrEndereco), valorOuTraco(registro.corrNumero), valorOuTraco(registro.corrBairro), valorOuTraco(registro.corrCep)]]
-    );
-    tabela(
-      ["Complemento", "Município", "UF", "País"],
-      [[valorOuTraco(registro.corrComplemento), valorOuTraco(registro.corrMunicipio), valorOuTraco(registro.corrUf), valorOuTraco(registro.corrPais)]]
-    );
+    linhaCaixas([
+      { rotulo: "Endereço", valor: registro.corrEndereco, prop: 2.4 },
+      { rotulo: "Número", valor: registro.corrNumero, prop: 1 },
+    ]);
+    linhaCaixas([
+      { rotulo: "Bairro", valor: registro.corrBairro, prop: 1.6 },
+      { rotulo: "CEP", valor: registro.corrCep, prop: 1 },
+    ]);
+    linhaCaixas([
+      { rotulo: "Complemento", valor: registro.corrComplemento, prop: 1.6 },
+      { rotulo: "País", valor: registro.corrPais, prop: 1 },
+    ]);
+    linhaCaixas([
+      { rotulo: "Município", valor: registro.corrMunicipio, prop: 1.6 },
+      { rotulo: "UF", valor: registro.corrUf, prop: 1 },
+    ]);
   }
 
+  // ---------- 10 — Medidas do Imóvel ----------
   tituloSecao("10 — Medidas do Imóvel");
-  tabela(
-    ["", "Frente", "Fundo", "Lado Direito", "Lado Esquerdo", "Quant. Total m²"],
-    [
-      ["Área Terreno", valorOuTraco(registro.areaTerrenoFrente), valorOuTraco(registro.areaTerrenoFundo), valorOuTraco(registro.areaTerrenoLadoDireito), valorOuTraco(registro.areaTerrenoLadoEsquerdo), valorOuTraco(registro.areaTerrenoTotal)],
-      ["Área Construída", valorOuTraco(registro.areaConstruidaFrente), valorOuTraco(registro.areaConstruidaFundo), valorOuTraco(registro.areaConstruidaLadoDireito), valorOuTraco(registro.areaConstruidaLadoEsquerdo), valorOuTraco(registro.areaConstruidaTotal)],
-    ]
-  );
+  linhaCaixas([
+    { rotulo: "", cabecalho: true, prop: 1.3 },
+    { rotulo: "Frente", cabecalho: true, prop: 1 },
+    { rotulo: "Fundo", cabecalho: true, prop: 1 },
+    { rotulo: "Lado Direito", cabecalho: true, prop: 1 },
+    { rotulo: "Lado Esquerdo", cabecalho: true, prop: 1 },
+    { rotulo: "Quant. Total m2", cabecalho: true, prop: 1.2 },
+  ], 8);
+  linhaCaixas([
+    { rotulo: "Área Terreno", cabecalho: true, alinhar: "left", prop: 1.3 },
+    { valor: registro.areaTerrenoFrente, semRotulo: true, prop: 1 },
+    { valor: registro.areaTerrenoFundo, semRotulo: true, prop: 1 },
+    { valor: registro.areaTerrenoLadoDireito, semRotulo: true, prop: 1 },
+    { valor: registro.areaTerrenoLadoEsquerdo, semRotulo: true, prop: 1 },
+    { valor: registro.areaTerrenoTotal, semRotulo: true, prop: 1.2 },
+  ], 9);
+  linhaCaixas([
+    { rotulo: "Área Construída", cabecalho: true, alinhar: "left", prop: 1.3 },
+    { valor: registro.areaConstruidaFrente, semRotulo: true, prop: 1 },
+    { valor: registro.areaConstruidaFundo, semRotulo: true, prop: 1 },
+    { valor: registro.areaConstruidaLadoDireito, semRotulo: true, prop: 1 },
+    { valor: registro.areaConstruidaLadoEsquerdo, semRotulo: true, prop: 1 },
+    { valor: registro.areaConstruidaTotal, semRotulo: true, prop: 1.2 },
+  ], 9);
 
+  // ---------- 11 — Demais Proprietários ----------
   tituloSecao("11 — Demais Proprietários");
   if (coProprietariosSalvos.length === 0) {
-    textoLivre("Nenhum.");
+    linhaCaixas([{ rotulo: "Demais Proprietários", valor: "Nenhum", prop: 1 }]);
   } else {
-    tabela(
-      ["Nome", "CPF/CNPJ", "%"],
-      coProprietariosSalvos.map((co) => [valorOuTraco(co.nome), valorOuTraco(co.cpfCnpj), co.percentual ? `${co.percentual}%` : "-"])
-    );
+    linhaCaixas([
+      { rotulo: "Nome", cabecalho: true, alinhar: "left", prop: 2 },
+      { rotulo: "CPF/CNPJ", cabecalho: true, prop: 1.2 },
+      { rotulo: "%", cabecalho: true, prop: 0.6 },
+    ], 7);
+    coProprietariosSalvos.forEach((co) => {
+      linhaCaixas([
+        { valor: co.nome, semRotulo: true, prop: 2 },
+        { valor: co.cpfCnpj, semRotulo: true, prop: 1.2 },
+        { valor: co.percentual ? `${co.percentual}%` : "-", semRotulo: true, prop: 0.6 },
+      ], 9);
+    });
   }
 
+  // ---------- 12 — Observação ----------
   if (registro.observacao) {
     tituloSecao("12 — Observação");
+    y += 3;
     textoLivre(registro.observacao);
   }
 
+  // ---------- Informação sobre a Edificação ----------
   tituloSecao("Informação sobre a Edificação");
-  tabela(
-    ["Estrutura", "Patrimônio", "Utilização", "Limitação"],
-    [[valorOuTraco(registro.estruturaNome), valorOuTraco(registro.patrimonioNome), valorOuTraco(registro.utilizacaoNome), valorOuTraco(registro.limitacaoNome)]]
-  );
-  tabela(
-    ["Isenção IPTU", "Isenção TSU"],
-    [[valorOuTraco(registro.isencaoIptuNome), valorOuTraco(registro.isencaoTsuNome)]]
-  );
+  linhaCaixas([
+    { rotulo: "Estrutura", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Patrimônio", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Utilização", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Limitação", cabecalho: true, alinhar: "left", prop: 1 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.estruturaNome, semRotulo: true, prop: 1 },
+    { valor: registro.patrimonioNome, semRotulo: true, prop: 1 },
+    { valor: registro.utilizacaoNome, semRotulo: true, prop: 1 },
+    { valor: registro.limitacaoNome, semRotulo: true, prop: 1 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Isenção IPTU", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Isenção TSU", cabecalho: true, alinhar: "left", prop: 1 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.isencaoIptuNome, semRotulo: true, prop: 1 },
+    { valor: registro.isencaoTsuNome, semRotulo: true, prop: 1 },
+  ]);
 
+  // ---------- Informações Gerais sobre o Terreno ----------
   tituloSecao("Informações Gerais sobre o Terreno");
-  tabela(
-    ["Situação", "Topografia", "Pedologia", "Posicionamento"],
-    [[valorOuTraco(registro.situacaoNome), valorOuTraco(registro.topografiaNome), valorOuTraco(registro.pedologiaNome), valorOuTraco(registro.posicionamentoNome)]]
-  );
+  linhaCaixas([
+    { rotulo: "Situação", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Topografia", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Pedologia", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Posicionamento", cabecalho: true, alinhar: "left", prop: 1 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.situacaoNome, semRotulo: true, prop: 1 },
+    { valor: registro.topografiaNome, semRotulo: true, prop: 1 },
+    { valor: registro.pedologiaNome, semRotulo: true, prop: 1 },
+    { valor: registro.posicionamentoNome, semRotulo: true, prop: 1 },
+  ]);
 
+  // ---------- Fatores de Qualidade do Imóvel ----------
   tituloSecao("Fatores de Qualidade do Imóvel");
-  tabela(
-    ["Cobertura", "Forro", "Paredes", "Fachada", "Instalação Sanitária"],
-    [[valorOuTraco(registro.coberturaNome), valorOuTraco(registro.forroNome), valorOuTraco(registro.paredesNome), valorOuTraco(registro.fachadaNome), valorOuTraco(registro.instalacaoSanitariaNome)]]
-  );
-  tabela(
-    ["Instalação Elétrica", "Piso", "Conservação", "Ano de Aquisição"],
-    [[valorOuTraco(registro.instalacaoEletricaNome), valorOuTraco(registro.pisoNome), valorOuTraco(registro.conservacaoNome), valorOuTraco(registro.anoAquisicao)]]
-  );
+  linhaCaixas([
+    { rotulo: "Cobertura", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Forro", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Paredes", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Fachada", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Instalação Sanitária", cabecalho: true, alinhar: "left", prop: 1.2 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.coberturaNome, semRotulo: true, prop: 1 },
+    { valor: registro.forroNome, semRotulo: true, prop: 1 },
+    { valor: registro.paredesNome, semRotulo: true, prop: 1 },
+    { valor: registro.fachadaNome, semRotulo: true, prop: 1 },
+    { valor: registro.instalacaoSanitariaNome, semRotulo: true, prop: 1.2 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Instalação Elétrica", cabecalho: true, alinhar: "left", prop: 1.2 },
+    { rotulo: "Piso", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Conservação", cabecalho: true, alinhar: "left", prop: 1 },
+    { rotulo: "Ano de Aquisição", cabecalho: true, alinhar: "left", prop: 1 },
+  ], 7);
+  linhaCaixas([
+    { valor: registro.instalacaoEletricaNome, semRotulo: true, prop: 1.2 },
+    { valor: registro.pisoNome, semRotulo: true, prop: 1 },
+    { valor: registro.conservacaoNome, semRotulo: true, prop: 1 },
+    { valor: registro.anoAquisicao, semRotulo: true, prop: 1 },
+  ]);
 
+  // ---------- Dimensões da Unidade ----------
   tituloSecao("Dimensões da Unidade");
-  tabela(
-    ["Campo", "Valor", "Campo", "Valor"],
-    [
-      ["Área do Terreno (m²)", valorOuTraco(registro.dimAreaTerreno), "Testada em T1", valorOuTraco(registro.dimTestadaT1)],
-      ["Área da Unidade (m²)", valorOuTraco(registro.dimAreaUnidade), "Testada em T2", valorOuTraco(registro.dimTestadaT2)],
-      ["Área Total da Edificação (m²)", valorOuTraco(registro.dimAreaTotalEdificacao), "Testada em T3", valorOuTraco(registro.dimTestadaT3)],
-      ["Número de Pavimentos", valorOuTraco(registro.dimNumeroPavimentos), "Testada em T4", valorOuTraco(registro.dimTestadaT4)],
-    ]
-  );
+  linhaCaixas([
+    { rotulo: "Área do Terreno (m2)", valor: registro.dimAreaTerreno, prop: 1.4 },
+    { rotulo: "Testada em T1", valor: registro.dimTestadaT1, prop: 1 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Área da Unidade (m2)", valor: registro.dimAreaUnidade, prop: 1.4 },
+    { rotulo: "Testada em T2", valor: registro.dimTestadaT2, prop: 1 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Área Total da Edificação (m2)", valor: registro.dimAreaTotalEdificacao, prop: 1.4 },
+    { rotulo: "Testada em T3", valor: registro.dimTestadaT3, prop: 1 },
+  ]);
+  linhaCaixas([
+    { rotulo: "Número de Pavimentos", valor: registro.dimNumeroPavimentos, prop: 1.4 },
+    { rotulo: "Testada em T4", valor: registro.dimTestadaT4, prop: 1 },
+  ]);
 
   if (registro.latitude && registro.longitude) {
+    y += 2;
     textoLivre(`Localização GPS: ${registro.latitude}, ${registro.longitude}`);
   }
 
