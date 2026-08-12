@@ -326,3 +326,26 @@ atualização em campo:
     tudo). Agora tem um botão "↩️ Desfazer" que volta só o último
     traço (ou o último "Limpar"), guardando um histórico da sessão de
     desenho na memória do navegador.
+
+- **v1.6** — PDF reorganizado em tabelas de verdade, mais parecido com
+  o boletim modelo em papel. Antes, cada campo era uma linha solta de
+  texto "rótulo: valor"; agora cada seção vira uma tabela com grade e
+  cabeçalho colorido (usando o plugin `jspdf-autotable`), incluindo uma
+  tabela de Medidas do Imóvel bem próxima da tabela original do BCI
+  (Frente/Fundo/Lado Direito/Lado Esquerdo/Quant. Total, uma linha pra
+  Terreno e outra pra Construída) e a mesma divisão em duas tiras que o
+  boletim em papel usa pra Fatores de Qualidade do Imóvel.
+
+- **v1.7** — PDF redesenhado no estilo "caixas grudadas" do boletim em
+  papel (a pedido, comparando com o modelo original enviado): trocou
+  as tabelas com espaçamento entre si (da v1.6) por um layout contínuo
+  de campos lado a lado com borda compartilhada — rótulo pequeno no
+  canto da caixa, valor embaixo — igual ao BCI físico, mantendo as
+  barras azuis só nos títulos de cada seção numerada (01/02, 03, 04,
+  05, 06, 10, 11, 12) e das seções sem número (Caracterização,
+  Informação sobre a Edificação, Informações Gerais sobre o Terreno,
+  Fatores de Qualidade, Dimensões da Unidade). Também troquei "m²" por
+  "m2" nos rótulos do PDF — a fonte padrão do jsPDF corta o símbolo de
+  superscrito em alguns leitores de PDF — e ajustei células estreitas
+  (ex: nome de distrito comprido) pra quebrar em duas linhas em vez de
+  cortar o texto.
