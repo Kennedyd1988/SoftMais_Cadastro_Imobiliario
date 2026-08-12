@@ -1066,6 +1066,7 @@ async function exportarBoletimPDF(registroBase) {
   let y = 15;
   const margemEsquerda = 14;
   const larguraUtil = 182;
+  const valorOuTraco = (v) => (v === null || v === undefined || v === "" ? "-" : String(v));
 
   function novaLinhaSeNecessario(alturaExtra = 8) {
     if (y > 280 - alturaExtra) { doc.addPage(); y = 15; }
@@ -1080,36 +1081,41 @@ async function exportarBoletimPDF(registroBase) {
     doc.setFont(undefined, "bold");
     doc.text(texto, margemEsquerda + 2, y + 5);
     doc.setTextColor(0, 0, 0);
-    y += 11;
+    y += 10;
   }
 
-  function linhaCampo(rotulo, valor) {
+  // Desenha uma tabela de verdade (cabeçalho azul + grade de linhas),
+  // no espírito das caixinhas do boletim em papel — e não mais como
+  // texto solto "rótulo: valor" empilhado. `cabecalhos` são os títulos
+  // das colunas; `linhas` é uma matriz de valores.
+  function tabela(cabecalhos, linhas, larguraColunas = null) {
+    const configuracaoColunas = {};
+    if (larguraColunas) {
+      larguraColunas.forEach((largura, indice) => {
+        configuracaoColunas[indice] = { cellWidth: largura };
+      });
+    }
+    doc.autoTable({
+      startY: y,
+      margin: { left: margemEsquerda, right: 210 - margemEsquerda - larguraUtil },
+      head: [cabecalhos],
+      body: linhas,
+      theme: "grid",
+      styles: { fontSize: 8.5, cellPadding: 2.2, textColor: [15, 41, 71], lineColor: [215, 228, 240], lineWidth: 0.15, overflow: "linebreak" },
+      headStyles: { fillColor: [13, 79, 196], textColor: 255, fontStyle: "bold", fontSize: 8 },
+      columnStyles: configuracaoColunas,
+      tableWidth: larguraUtil,
+    });
+    y = doc.lastAutoTable.finalY + 5;
+  }
+
+  function textoLivre(texto) {
     novaLinhaSeNecessario();
     doc.setFontSize(9);
-    doc.setFont(undefined, "bold");
-    const textoRotulo = `${rotulo}:`;
-    doc.text(textoRotulo, margemEsquerda, y);
-    const larguraRotulo = doc.getTextWidth(textoRotulo);
     doc.setFont(undefined, "normal");
-    const textoValor = String(valor ?? "-") || "-";
-
-    // Rótulo curto: valor continua na mesma linha, logo depois do
-    // rótulo (a posição é calculada pela largura real do texto, nunca
-    // um deslocamento fixo — é isso que antes causava sobreposição em
-    // rótulos longos como "Terreno — Frente/Fundo/Ld.Dir/Ld.Esq").
-    // Rótulo longo: o valor desce pra linha de baixo, com recuo.
-    if (larguraRotulo <= 62) {
-      const xValor = margemEsquerda + larguraRotulo + 3;
-      const linhas = doc.splitTextToSize(textoValor, larguraUtil - larguraRotulo - 3);
-      doc.text(linhas, xValor, y);
-      y += Math.max(6, linhas.length * 5);
-    } else {
-      y += 5;
-      novaLinhaSeNecessario();
-      const linhas = doc.splitTextToSize(textoValor, larguraUtil - 6);
-      doc.text(linhas, margemEsquerda + 6, y);
-      y += Math.max(6, linhas.length * 5) + 1;
-    }
+    const linhas = doc.splitTextToSize(texto, larguraUtil);
+    doc.text(linhas, margemEsquerda, y);
+    y += linhas.length * 5 + 4;
   }
 
   doc.setFontSize(14);
@@ -1121,99 +1127,122 @@ async function exportarBoletimPDF(registroBase) {
   y += 9;
 
   tituloSecao("01/02 — Inscrição Imobiliária");
-  linhaCampo("Inscrição Imobiliária Atual", registro.inscricaoImobiliaria);
-  linhaCampo("Inscrição Imobiliária Anterior", registro.inscricaoImobiliariaAnterior);
-  linhaCampo("Status", registro.statusAtualizacao === "atualizado" ? "Atualizado" : "Pendente de atualização");
+  tabela(
+    ["Inscrição Imobiliária Atual", "Inscrição Imobiliária Anterior", "Status"],
+    [[valorOuTraco(registro.inscricaoImobiliaria), valorOuTraco(registro.inscricaoImobiliariaAnterior), registro.statusAtualizacao === "atualizado" ? "Atualizado" : "Pendente de atualização"]]
+  );
 
   tituloSecao("03 — Localização do Imóvel");
-  linhaCampo("Logradouro / Número", `${registro.logradouroTipo || ""} ${registro.logradouroNome || ""}, ${registro.numero || "s/n"}`);
-  linhaCampo("Complemento", registro.complemento);
-  linhaCampo("Bairro / CEP", `${registro.bairroNome || "-"} / ${registro.cep || "-"}`);
-  linhaCampo("Distrito / Setor / Quadra", `${registro.distritoNome || "-"} / ${registro.setorNome || "-"} / ${registro.quadraNome || "-"}`);
-  linhaCampo("Lote / Unidade", `${registro.lote || "-"} / ${registro.unidade || "-"}`);
-  linhaCampo("Condomínio", registro.condominioNome);
-  linhaCampo("Tipo de Imóvel", registro.tipoImovelNome);
-  linhaCampo("Medidor Água / Energia", `${registro.medidorAgua || "-"} / ${registro.medidorEnergia || "-"}`);
+  tabela(
+    ["Logradouro / Número", "Complemento", "Bairro", "CEP"],
+    [[
+      `${registro.logradouroTipo || ""} ${registro.logradouroNome || ""}, ${registro.numero || "s/n"}`.trim(),
+      valorOuTraco(registro.complemento),
+      valorOuTraco(registro.bairroNome),
+      valorOuTraco(registro.cep),
+    ]]
+  );
+  tabela(
+    ["Distrito", "Setor", "Quadra", "Lote", "Unidade", "Condomínio"],
+    [[valorOuTraco(registro.distritoNome), valorOuTraco(registro.setorNome), valorOuTraco(registro.quadraNome), valorOuTraco(registro.lote), valorOuTraco(registro.unidade), valorOuTraco(registro.condominioNome)]]
+  );
+  tabela(
+    ["Tipo de Imóvel", "Nº Medidor Água", "Nº Medidor Energia"],
+    [[valorOuTraco(registro.tipoImovelNome), valorOuTraco(registro.medidorAgua), valorOuTraco(registro.medidorEnergia)]]
+  );
 
   tituloSecao("Caracterização do Imóvel");
-  linhaCampo("Natureza", registro.naturezaNome);
-  linhaCampo("Edificação", registro.edificacaoNome);
+  tabela(["Natureza", "Edificação"], [[valorOuTraco(registro.naturezaNome), valorOuTraco(registro.edificacaoNome)]]);
 
   tituloSecao("04 — Dados do Proprietário");
-  linhaCampo("Nome", registro.proprietarioNome);
-  linhaCampo("CPF/CNPJ", registro.proprietarioCpfCnpj);
-  linhaCampo("Telefone / Celular", `${registro.proprietarioTelefone || "-"} / ${registro.proprietarioCelular || "-"}`);
-  linhaCampo("E-mail", registro.proprietarioEmail);
+  tabela(
+    ["Nome", "CPF/CNPJ", "Telefone", "Celular", "E-mail"],
+    [[valorOuTraco(registro.proprietarioNome), valorOuTraco(registro.proprietarioCpfCnpj), valorOuTraco(registro.proprietarioTelefone), valorOuTraco(registro.proprietarioCelular), valorOuTraco(registro.proprietarioEmail)]]
+  );
 
   tituloSecao("05 — Dados do Responsável pelo Pagamento");
-  linhaCampo("Nome", registro.responsavelNome);
-  linhaCampo("CPF/CNPJ", registro.responsavelCpfCnpj);
-  linhaCampo("Telefone / Celular", `${registro.responsavelTelefone || "-"} / ${registro.responsavelCelular || "-"}`);
+  tabela(
+    ["Nome", "CPF/CNPJ", "Telefone", "Celular"],
+    [[valorOuTraco(registro.responsavelNome), valorOuTraco(registro.responsavelCpfCnpj), valorOuTraco(registro.responsavelTelefone), valorOuTraco(registro.responsavelCelular)]]
+  );
 
   tituloSecao("06 — Endereço para Correspondência");
   if (registro.corrMesmoProprietario) {
-    linhaCampo("Endereço", "Mesmo endereço cadastrado do proprietário");
+    textoLivre("Mesmo endereço cadastrado do proprietário.");
   } else {
-    linhaCampo("Endereço / Número", `${registro.corrEndereco || "-"} / ${registro.corrNumero || "-"}`);
-    linhaCampo("Bairro / CEP", `${registro.corrBairro || "-"} / ${registro.corrCep || "-"}`);
-    linhaCampo("Complemento", registro.corrComplemento);
-    linhaCampo("Município / UF / País", `${registro.corrMunicipio || "-"} / ${registro.corrUf || "-"} / ${registro.corrPais || "-"}`);
+    tabela(
+      ["Endereço", "Número", "Bairro", "CEP"],
+      [[valorOuTraco(registro.corrEndereco), valorOuTraco(registro.corrNumero), valorOuTraco(registro.corrBairro), valorOuTraco(registro.corrCep)]]
+    );
+    tabela(
+      ["Complemento", "Município", "UF", "País"],
+      [[valorOuTraco(registro.corrComplemento), valorOuTraco(registro.corrMunicipio), valorOuTraco(registro.corrUf), valorOuTraco(registro.corrPais)]]
+    );
   }
 
   tituloSecao("10 — Medidas do Imóvel");
-  linhaCampo("Terreno — Frente / Fundo", `${registro.areaTerrenoFrente ?? "-"} / ${registro.areaTerrenoFundo ?? "-"}`);
-  linhaCampo("Terreno — Lado Direito / Esquerdo", `${registro.areaTerrenoLadoDireito ?? "-"} / ${registro.areaTerrenoLadoEsquerdo ?? "-"}`);
-  linhaCampo("Terreno — Total m²", registro.areaTerrenoTotal);
-  linhaCampo("Construída — Frente / Fundo", `${registro.areaConstruidaFrente ?? "-"} / ${registro.areaConstruidaFundo ?? "-"}`);
-  linhaCampo("Construída — Lado Direito / Esquerdo", `${registro.areaConstruidaLadoDireito ?? "-"} / ${registro.areaConstruidaLadoEsquerdo ?? "-"}`);
-  linhaCampo("Construída — Total m²", registro.areaConstruidaTotal);
+  tabela(
+    ["", "Frente", "Fundo", "Lado Direito", "Lado Esquerdo", "Quant. Total m²"],
+    [
+      ["Área Terreno", valorOuTraco(registro.areaTerrenoFrente), valorOuTraco(registro.areaTerrenoFundo), valorOuTraco(registro.areaTerrenoLadoDireito), valorOuTraco(registro.areaTerrenoLadoEsquerdo), valorOuTraco(registro.areaTerrenoTotal)],
+      ["Área Construída", valorOuTraco(registro.areaConstruidaFrente), valorOuTraco(registro.areaConstruidaFundo), valorOuTraco(registro.areaConstruidaLadoDireito), valorOuTraco(registro.areaConstruidaLadoEsquerdo), valorOuTraco(registro.areaConstruidaTotal)],
+    ]
+  );
 
   tituloSecao("11 — Demais Proprietários");
   if (coProprietariosSalvos.length === 0) {
-    linhaCampo("Demais Proprietários", "Nenhum");
+    textoLivre("Nenhum.");
   } else {
-    coProprietariosSalvos.forEach((co, indice) => {
-      linhaCampo(`Proprietário ${indice + 2}`, `${co.nome || "-"} — CPF/CNPJ: ${co.cpfCnpj || "-"}${co.percentual ? ` — ${co.percentual}%` : ""}`);
-    });
+    tabela(
+      ["Nome", "CPF/CNPJ", "%"],
+      coProprietariosSalvos.map((co) => [valorOuTraco(co.nome), valorOuTraco(co.cpfCnpj), co.percentual ? `${co.percentual}%` : "-"])
+    );
   }
 
   if (registro.observacao) {
     tituloSecao("12 — Observação");
-    doc.setFontSize(9);
-    doc.setFont(undefined, "normal");
-    const linhas = doc.splitTextToSize(registro.observacao, larguraUtil);
-    doc.text(linhas, margemEsquerda, y);
-    y += linhas.length * 5 + 4;
+    textoLivre(registro.observacao);
   }
 
   tituloSecao("Informação sobre a Edificação");
-  linhaCampo("Estrutura", registro.estruturaNome);
-  linhaCampo("Patrimônio", registro.patrimonioNome);
-  linhaCampo("Utilização", registro.utilizacaoNome);
-  linhaCampo("Limitação", registro.limitacaoNome);
-  linhaCampo("Isenção IPTU / TSU", `${registro.isencaoIptuNome || "-"} / ${registro.isencaoTsuNome || "-"}`);
+  tabela(
+    ["Estrutura", "Patrimônio", "Utilização", "Limitação"],
+    [[valorOuTraco(registro.estruturaNome), valorOuTraco(registro.patrimonioNome), valorOuTraco(registro.utilizacaoNome), valorOuTraco(registro.limitacaoNome)]]
+  );
+  tabela(
+    ["Isenção IPTU", "Isenção TSU"],
+    [[valorOuTraco(registro.isencaoIptuNome), valorOuTraco(registro.isencaoTsuNome)]]
+  );
 
   tituloSecao("Informações Gerais sobre o Terreno");
-  linhaCampo("Situação", registro.situacaoNome);
-  linhaCampo("Topografia", registro.topografiaNome);
-  linhaCampo("Pedologia", registro.pedologiaNome);
-  linhaCampo("Posicionamento", registro.posicionamentoNome);
+  tabela(
+    ["Situação", "Topografia", "Pedologia", "Posicionamento"],
+    [[valorOuTraco(registro.situacaoNome), valorOuTraco(registro.topografiaNome), valorOuTraco(registro.pedologiaNome), valorOuTraco(registro.posicionamentoNome)]]
+  );
 
   tituloSecao("Fatores de Qualidade do Imóvel");
-  linhaCampo("Cobertura / Forro", `${registro.coberturaNome || "-"} / ${registro.forroNome || "-"}`);
-  linhaCampo("Paredes / Fachada", `${registro.paredesNome || "-"} / ${registro.fachadaNome || "-"}`);
-  linhaCampo("Instalação Sanit. / Elétrica", `${registro.instalacaoSanitariaNome || "-"} / ${registro.instalacaoEletricaNome || "-"}`);
-  linhaCampo("Piso / Conservação", `${registro.pisoNome || "-"} / ${registro.conservacaoNome || "-"}`);
-  linhaCampo("Ano de Aquisição", registro.anoAquisicao);
+  tabela(
+    ["Cobertura", "Forro", "Paredes", "Fachada", "Instalação Sanitária"],
+    [[valorOuTraco(registro.coberturaNome), valorOuTraco(registro.forroNome), valorOuTraco(registro.paredesNome), valorOuTraco(registro.fachadaNome), valorOuTraco(registro.instalacaoSanitariaNome)]]
+  );
+  tabela(
+    ["Instalação Elétrica", "Piso", "Conservação", "Ano de Aquisição"],
+    [[valorOuTraco(registro.instalacaoEletricaNome), valorOuTraco(registro.pisoNome), valorOuTraco(registro.conservacaoNome), valorOuTraco(registro.anoAquisicao)]]
+  );
 
   tituloSecao("Dimensões da Unidade");
-  linhaCampo("Área do Terreno / Testada T1", `${registro.dimAreaTerreno ?? "-"} m² / ${registro.dimTestadaT1 ?? "-"}`);
-  linhaCampo("Área da Unidade / Testada T2", `${registro.dimAreaUnidade ?? "-"} m² / ${registro.dimTestadaT2 ?? "-"}`);
-  linhaCampo("Área Total da Edificação / Testada T3", `${registro.dimAreaTotalEdificacao ?? "-"} m² / ${registro.dimTestadaT3 ?? "-"}`);
-  linhaCampo("Número de Pavimentos / Testada T4", `${registro.dimNumeroPavimentos ?? "-"} / ${registro.dimTestadaT4 ?? "-"}`);
+  tabela(
+    ["Campo", "Valor", "Campo", "Valor"],
+    [
+      ["Área do Terreno (m²)", valorOuTraco(registro.dimAreaTerreno), "Testada em T1", valorOuTraco(registro.dimTestadaT1)],
+      ["Área da Unidade (m²)", valorOuTraco(registro.dimAreaUnidade), "Testada em T2", valorOuTraco(registro.dimTestadaT2)],
+      ["Área Total da Edificação (m²)", valorOuTraco(registro.dimAreaTotalEdificacao), "Testada em T3", valorOuTraco(registro.dimTestadaT3)],
+      ["Número de Pavimentos", valorOuTraco(registro.dimNumeroPavimentos), "Testada em T4", valorOuTraco(registro.dimTestadaT4)],
+    ]
+  );
 
   if (registro.latitude && registro.longitude) {
-    linhaCampo("Localização GPS", `${registro.latitude}, ${registro.longitude}`);
+    textoLivre(`Localização GPS: ${registro.latitude}, ${registro.longitude}`);
   }
 
   // -------- Croquis da Unidade (imagem) --------
@@ -1273,7 +1302,7 @@ async function exportarBoletimPDF(registroBase) {
     if (coluna !== 0) y += alturaFoto + espacamento;
 
     if (fotosComErro > 0) {
-      linhaCampo("Aviso", `${fotosComErro} de ${registro.fotos.length} foto(s) não puderam ser incluídas no PDF — provavelmente falta liberar o CORS do Firebase Storage para este site.`);
+      textoLivre(`Aviso: ${fotosComErro} de ${registro.fotos.length} foto(s) não puderam ser incluídas no PDF — provavelmente falta liberar o CORS do Firebase Storage para este site.`);
       mostrarToast(`${fotosComErro} foto(s) não puderam ser incluídas no PDF.`, "erro");
     }
   }
