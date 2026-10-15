@@ -142,8 +142,22 @@ entidades/{entidadeId}                     — prefeitura/ente (multi-tenant)
   ├─ contribuintes/{id}                    — nome, cpfCnpj, telefone, celular, email, endereço
   ├─ boletins/{id}                         — o BCI completo (ver campos abaixo)
   │    └─ coProprietarios/{id}             — nome, cpfCnpj, percentual (item 11 do BCI)
-  └─ historico/{id}                        — auditoria (quem alterou o quê e quando)
+  ├─ historico/{id}                        — auditoria (quem alterou o quê e quando)
+  └─ controleExportacao/contadores         — contador interno da Exportação de Alterações
+                                              (gera os sq_* novos para cadastros criados no app)
 ```
+
+Cada cadastro de apoio (exceto Condomínio, que não existe no formato
+legado) guarda o sq_* de origem da planilha legada — `sqLegado` em
+Zona/Distrito/Tipo de Imóvel/Bairro/Setor/Quadra, `codigoLegado` em
+Logradouro/Contribuinte, `origemLegadoId` em Boletim. Um registro
+criado direto no app (sem vir da importação) não tem esse campo até a
+primeira vez que entra numa Exportação de Alterações (menu
+Administração → Exportação de Alterações — detalhes no changelog da
+v1.9, abaixo). Todo cadastro também guarda
+`tocadoManualmente: true` quando passa por um salvamento manual pela
+tela (nunca pela importação), usado pra saber o que exportar no modo
+"somente alterados".
 
 O vínculo em cascata que permite o auto-preenchimento no boletim:
 **Logradouro → Bairro + CEP** (ao escolher o logradouro) e
@@ -388,3 +402,113 @@ atualização em campo:
     diferentes de título.
   - **Números da seção "10 — Medidas do Imóvel" alinhados à direita**,
     como é padrão em campos numéricos de formulário.
+
+- **v1.9** — Nova tela **"Exportação de Alterações"** (menu
+  Administração), que gera uma planilha XLSX no mesmo layout/abas do
+  arquivo original de importação (ZONA, DISTRITO, TIPO_IMOVEL, BAIRRO,
+  SETOR_MUNICIPIO, SETOR_QUADRA, QUADRA, BAIRRO_LOGRADOURO, LOGRADOURO,
+  CONTRIBUINTE, IMOVEL, AREA_IMOVEL, SECAO), pra levar as atualizações
+  feitas no app de volta pro sistema legado:
+  - **Duas opções de exportação**: "Somente alterados" (só o que foi
+    incluído ou editado manualmente desde a importação) ou "Tudo"
+    (todos os cadastros/boletins atuais). Nenhuma das duas marca nada
+    como "já exportado" — sempre traz o acumulado completo desde a
+    importação, mesmo repetindo registros já exportados antes (decisão
+    explícita, pra nunca arriscar deixar algo de fora).
+  - **Como funciona o "somente alterados"**: todo salvamento manual
+    pela tela do app (criar ou editar um cadastro de apoio, boletim,
+    contribuinte etc.) grava um campo interno `tocadoManualmente:
+    true`. A importação do legado nunca grava esse campo — então ele
+    sobrevive a reimportações e serve de sinal confiável do que foi
+    tocado depois da base original.
+  - **IDs legados (sq_*) de registros novos**: um cadastro criado do
+    zero dentro do app (sem vir da importação) não tem um sq_* de
+    origem. Na primeira vez que ele é exportado, o app gera um código
+    novo (faixa 900001+, que nunca colide com os sq_* da base legada
+    de origem) e **grava esse código de volta no cadastro**, pra ele
+    continuar o mesmo em exportações futuras — evita duplicar o mesmo
+    registro no sistema legado se a planilha for reimportada mais de
+    uma vez.
+  - **Limitações conhecidas** (inerentes ao formato, documentadas na
+    tela e aqui): fotos e croquis não são exportados (só existem no
+    Storage do app, sem campo equivalente na planilha legada); os
+    campos específicos do BCI (natureza, edificação, estrutura, padrão
+    de acabamento etc.) não existem na planilha legada e por isso não
+    entram na exportação; não existe aba de Condomínio no formato
+    legado, então o vínculo `sq_condominio` do Imóvel fica em branco
+    quando o boletim tem condomínio selecionado; valores numéricos de
+    medida saem como número nativo do Excel (o arquivo original usava
+    texto com vírgula) — mais robusto pra reimportar, mas é uma
+    pequena diferença de formatação de célula, não de layout/abas.
+
+- **v1.10** — A mesma tela **"Exportação de Alterações"** ganhou uma
+  segunda opção de formato: **XML Contabilis**, no formato exigido
+  para importar diretamente no sistema Contabilis da prefeitura (um
+  arquivo `.xml` por tabela, todos compactados num `.zip`, no padrão
+  `<?xml version="1.0" encoding="iso-8859-1" ?><CONTABILIS><NOME_TABELA>
+  ...</NOME_TABELA></CONTABILIS>` confirmado em amostras reais exportadas
+  do próprio Contabilis). O escopo (Tudo / Somente alterados) é o mesmo
+  já existente pro XLSX — os dois formatos usam exatamente a mesma
+  coleta/filtragem de dados e a mesma geração de código legado novo
+  (`coletarDadosExportacao`, refatorado nesta versão a partir do que já
+  existia), só a montagem final do arquivo é diferente.
+  - **Tabelas exportadas em XML**: ZONA, DISTRITO, TIPO_IMOVEL, SECAO
+    (sempre vazia — ver limitação já documentada), BAIRRO,
+    SETOR_MUNICIPIO, QUADRA, SETOR_QUADRA, LOGRADOURO,
+    BAIRRO_LOGRADOURO, CONDOMINIO, CONTRIBUINTE, IMOVEL, AREA_IMOVEL,
+    PROPRIETARIO, TESTADA — as 13 tabelas já cobertas pelo XLSX mais as
+    três que o XLSX/formato legado original não tinha (CONDOMINIO,
+    PROPRIETARIO, TESTADA), confirmadas com amostras reais exportadas
+    do próprio Contabilis depois de comparar a lista completa de
+    ~250+ tabelas que o sistema aceita importar com o que o app já
+    coleta no boletim.
+  - **Arquivos numerados na ordem de importação recomendada**
+    (`01_ZONA.xml`, `02_DISTRITO.xml`, ... `16_TESTADA.xml`),
+    calculada pela dependência de chave estrangeira entre as tabelas —
+    importar fora dessa ordem tende a gerar erro de "registro
+    relacionado não encontrado" no Contabilis:
+    `ZONA → DISTRITO → TIPO_IMOVEL → SECAO → BAIRRO (depende de ZONA)
+    → SETOR_MUNICIPIO (depende de DISTRITO) → QUADRA →
+    SETOR_QUADRA (depende de SETOR_MUNICIPIO + QUADRA) → LOGRADOURO →
+    BAIRRO_LOGRADOURO (depende de BAIRRO + LOGRADOURO) → CONDOMINIO →
+    CONTRIBUINTE → IMOVEL (depende de quase todas as anteriores) →
+    AREA_IMOVEL (depende de IMOVEL) → PROPRIETARIO (depende de IMOVEL +
+    CONTRIBUINTE) → TESTADA (depende de IMOVEL + LOGRADOURO)`.
+  - **Codificação**: o Contabilis exige ISO-8859-1 (Latin-1), não
+    UTF-8 — os arquivos são gravados byte a byte nessa codificação
+    (função `paraBytesLatin1`), senão os acentos ficariam corrompidos
+    mesmo com a declaração `encoding="iso-8859-1"` no cabeçalho do XML.
+  - **Valores numéricos de medida** saem como texto com vírgula decimal
+    (ex: `8,00`), igual ao padrão visto nas amostras do Contabilis —
+    diferente do XLSX, que usa número nativo do Excel.
+  - **CONDOMINIO**: o cadastro de Condomínio do app só guarda o nome —
+    `qt_metroQuadrado`, `sq_logradouro`, `sq_bairro` e `tp_condominio`
+    saem em branco por falta dessa informação no app. `sq_condominio`
+    do IMOVEL agora é preenchido corretamente quando o boletim tem um
+    condomínio selecionado.
+  - **PROPRIETARIO**: uma linha pro proprietário principal do imóvel
+    (campo "Contribuinte" do boletim) e uma linha por "Demais
+    Proprietário" (item 11 do BCI, subcoleção `coProprietarios`:
+    nome, CPF/CNPJ, percentual). Cada co-proprietário é resolvido pra
+    um Contribuinte cadastrado comparando o CPF/CNPJ — se nenhum
+    Contribuinte correspondente existir, aquele co-proprietário é
+    **pulado** (nunca inventamos um `sq_contribuinte`) e um aviso
+    aparece no log da exportação, listando nome/CPF, pra o usuário
+    cadastrar o Contribuinte que falta e exportar de novo. O percentual
+    do proprietário principal é **deduzido** como o restante até 100%
+    (100% menos a soma dos percentuais dos demais) — o app não grava
+    esse percentual explicitamente, então essa é uma suposição; revise
+    se os percentuais no Contabilis não baterem com o esperado.
+  - **TESTADA**: uma linha por testada preenchida (T1 a T4) no boletim.
+    `fl_principal` sai "True" só pra T1 (suposição — o BCI não marca
+    explicitamente qual testada é a principal) e `sq_logradouro` é
+    sempre o logradouro do próprio imóvel (o boletim não grava um
+    logradouro por testada). Testadas não preenchidas não geram linha.
+  - **FATOR / FATOR_IMOVEL ignoradas de propósito**: confirmado com o
+    cliente que esta prefeitura não tem nenhum fator de correção de
+    IPTU cadastrado no Contabilis — essas duas tabelas foram deixadas
+    de fora intencionalmente, não por falta de mapeamento. Pelas
+    amostras, representariam um conceito de qualquer forma diferente
+    das "Fatores de Qualidade do Imóvel" que o boletim já coleta
+    (cobertura, forro, piso, conservação etc., que são atributos
+    construtivos, não fatores de correção fiscal).

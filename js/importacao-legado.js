@@ -117,7 +117,7 @@ async function executarImportacaoLegado(arquivo) {
       zonas.map((linha) => (lote) => {
         const id = `legado_zona_${linha.sq_zona}`;
         mapaZonas[linha.sq_zona] = { id, nome: linha.nm_zona };
-        lote.set(colecaoEntidade("zonas").doc(id), { nome: linha.nm_zona, nomeNormalizado: normalizarTexto(linha.nm_zona) }, { merge: true });
+        lote.set(colecaoEntidade("zonas").doc(id), { nome: linha.nm_zona, nomeNormalizado: normalizarTexto(linha.nm_zona), sqLegado: String(linha.sq_zona) }, { merge: true });
       })
     );
 
@@ -133,7 +133,7 @@ async function executarImportacaoLegado(arquivo) {
         const id = `legado_distrito_${linha.sq_distrito}`;
         const codigo = preencherZeros(String(indice + 1), 2);
         mapaDistritos[linha.sq_distrito] = { id, nome: linha.nm_distrito, codigo };
-        lote.set(colecaoEntidade("distritos").doc(id), { nome: linha.nm_distrito, nomeNormalizado: normalizarTexto(linha.nm_distrito), codigo }, { merge: true });
+        lote.set(colecaoEntidade("distritos").doc(id), { nome: linha.nm_distrito, nomeNormalizado: normalizarTexto(linha.nm_distrito), codigo, sqLegado: String(linha.sq_distrito) }, { merge: true });
       })
     );
 
@@ -144,7 +144,7 @@ async function executarImportacaoLegado(arquivo) {
       tiposImovel.map((linha) => (lote) => {
         const id = `legado_tipoimovel_${linha.sq_tipoImovel}`;
         mapaTiposImovel[linha.sq_tipoImovel] = { id, nome: linha.nm_tipoImovel };
-        lote.set(colecaoEntidade("tiposImovel").doc(id), { nome: linha.nm_tipoImovel, nomeNormalizado: normalizarTexto(linha.nm_tipoImovel) }, { merge: true });
+        lote.set(colecaoEntidade("tiposImovel").doc(id), { nome: linha.nm_tipoImovel, nomeNormalizado: normalizarTexto(linha.nm_tipoImovel), sqLegado: String(linha.sq_tipoImovel) }, { merge: true });
       })
     );
 
@@ -158,7 +158,7 @@ async function executarImportacaoLegado(arquivo) {
         mapaBairros[linha.sq_bairro] = { id, nome: linha.nm_bairro };
         lote.set(
           colecaoEntidade("bairros").doc(id),
-          { nome: linha.nm_bairro, nomeNormalizado: normalizarTexto(linha.nm_bairro), zonaId: zona?.id || null, zonaNome: zona?.nome || "" },
+          { nome: linha.nm_bairro, nomeNormalizado: normalizarTexto(linha.nm_bairro), zonaId: zona?.id || null, zonaNome: zona?.nome || "", sqLegado: String(linha.sq_bairro) },
           { merge: true }
         );
       })
@@ -181,6 +181,7 @@ async function executarImportacaoLegado(arquivo) {
           {
             nome: linha.nm_setor, nomeNormalizado: normalizarTexto(linha.nm_setor), codigo,
             distritoId: distrito?.id || null, distritoNome: distrito?.nome || "", distritoCodigo: distrito?.codigo || "",
+            sqLegado: String(linha.sq_setor),
           },
           { merge: true }
         );
@@ -213,6 +214,7 @@ async function executarImportacaoLegado(arquivo) {
             nome: linha.nm_quadra, nomeNormalizado: normalizarTexto(linha.nm_quadra), codigo,
             setorId: setor?.id || null, setorNome: setor?.nome || "", setorCodigo: setor?.codigo || "",
             distritoId: setor?.distritoId || null, distritoNome: setor?.distritoNome || "", distritoCodigo: setor?.distritoCodigo || "",
+            sqLegado: String(linha.sq_quadra),
           },
           { merge: true }
         );
@@ -309,6 +311,11 @@ async function executarImportacaoLegado(arquivo) {
         setorId: mapaSetorPorQuadra[linha.sq_quadra] ? mapaSetores[mapaSetorPorQuadra[linha.sq_quadra]]?.id : null,
         setorNome: mapaSetorPorQuadra[linha.sq_quadra] ? mapaSetores[mapaSetorPorQuadra[linha.sq_quadra]]?.nome : "",
         setorCodigo: mapaSetorPorQuadra[linha.sq_quadra] ? mapaSetores[mapaSetorPorQuadra[linha.sq_quadra]]?.codigo : "",
+        // distritoId gravado direto (além do distritoCodigo) pra ficar
+        // consistente com o salvamento manual do boletim e permitir
+        // resolver o distrito sem precisar reconsultar o setor —
+        // usado pela Exportação de Alterações.
+        distritoId: mapaSetorPorQuadra[linha.sq_quadra] ? mapaSetores[mapaSetorPorQuadra[linha.sq_quadra]]?.distritoId : null,
         distritoCodigo: mapaSetorPorQuadra[linha.sq_quadra] ? mapaSetores[mapaSetorPorQuadra[linha.sq_quadra]]?.distritoCodigo : "",
         lote: String(linha.nu_lote || ""),
         unidade: String(linha.nu_unidade || ""),

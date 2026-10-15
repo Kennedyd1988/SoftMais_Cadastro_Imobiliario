@@ -2,7 +2,7 @@
 // NÚCLEO DO APP — autenticação, permissões, navegação, utilidades
 // ===================================================================
 
-const VERSAO_APP = "1.8";
+const VERSAO_APP = "1.11";
 document.addEventListener("DOMContentLoaded", () => {
   const elementoLogin = document.getElementById("versao-app-login");
   if (elementoLogin) elementoLogin.textContent = `v${VERSAO_APP}`;
@@ -357,6 +357,7 @@ const ITENS_MENU = [
   { chave: "tipos-imovel", rotulo: "Tipos de Imóvel", icone: "⚙️", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
 
   { chave: "importacao-legado", rotulo: "Importação do Legado", icone: "📥", modulo: null, somenteAdmin: true, grupo: "Administração" },
+  { chave: "exportacao-legado", rotulo: "Exportação de Alterações", icone: "📤", modulo: null, somenteAdmin: true, grupo: "Administração" },
   { chave: "usuarios", rotulo: "Usuários", icone: "👤", modulo: "usuarios", somenteAdmin: true, grupo: "Administração" },
   { chave: "unidades-gestoras", rotulo: "Prefeituras / Entes", icone: "🏛️", modulo: "unidadesGestoras", somenteAdmin: true, grupo: "Administração" },
   { chave: "historico", rotulo: "Histórico", icone: "🕒", modulo: "historico", somenteAdmin: true, grupo: "Administração" },
@@ -475,6 +476,9 @@ function navegarPara(chave) {
       break;
     case "importacao-legado":
       renderizarImportacaoLegado(area);
+      break;
+    case "exportacao-legado":
+      renderizarExportacaoLegado(area);
       break;
     case "usuarios":
       renderizarUsuarios(area);

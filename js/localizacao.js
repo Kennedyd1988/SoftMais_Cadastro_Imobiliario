@@ -87,6 +87,7 @@ async function renderizarSetores(area) {
           nome, nomeNormalizado: normalizarTexto(nome),
           codigo: preencherZeros(campoCodigo.value, 2),
           distritoId: distrito.id, distritoNome: distrito.nome, distritoCodigo: distrito.codigo || "",
+          tocadoManualmente: true,
         };
         if (registro) {
           await colecaoEntidade("setores").doc(registro.id).update(dados);
@@ -181,6 +182,7 @@ async function renderizarQuadras(area) {
           codigo: preencherZeros(campoCodigo.value, 3),
           setorId: setor.id, setorNome: setor.nome, setorCodigo: setor.codigo || "",
           distritoId: setor.distritoId, distritoNome: setor.distritoNome, distritoCodigo: setor.distritoCodigo || "",
+          tocadoManualmente: true,
         };
         if (registro) {
           await colecaoEntidade("quadras").doc(registro.id).update(dados);
@@ -268,6 +270,7 @@ async function renderizarBairros(area) {
         const dados = {
           nome, nomeNormalizado: normalizarTexto(nome),
           zonaId: zona.id, zonaNome: zona.nome,
+          tocadoManualmente: true,
         };
         if (registro) {
           await colecaoEntidade("bairros").doc(registro.id).update(dados);
@@ -386,6 +389,7 @@ async function renderizarLogradouros(area) {
           bairroId: bairro.id, bairroNome: bairro.nome,
           cep: document.getElementById("campo-cep").value.trim(),
           codigoLegado: document.getElementById("campo-codigo-legado").value.trim(),
+          tocadoManualmente: true,
         };
         if (registro) {
           await colecaoEntidade("logradouros").doc(registro.id).update(dados);

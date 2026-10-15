@@ -87,6 +87,7 @@ async function renderizarContribuintes(area) {
           endereco: document.getElementById("campo-endereco").value.trim(),
           bairro: document.getElementById("campo-bairro").value.trim(),
           cep: document.getElementById("campo-cep").value.trim(),
+          tocadoManualmente: true,
         };
         if (registro) {
           await colecaoEntidade("contribuintes").doc(registro.id).update(dados);
