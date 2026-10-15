@@ -126,10 +126,7 @@ async function renderizarCadastroApoio(area, nomeColecao, rotuloSingular, opcoes
         if (!valido) return;
 
         await executarComFeedback(botaoSalvar, async () => {
-          // tocadoManualmente: sinaliza que esse registro passou pela
-          // tela de edição manual (nunca setado pela importação do
-          // legado) — usado pela Exportação de Alterações.
-          const dados = { nome, nomeNormalizado: normalizarTexto(nome), tocadoManualmente: true };
+          const dados = { nome, nomeNormalizado: normalizarTexto(nome) };
           if (campoCodigo) dados.codigo = preencherZeros(campoCodigo.value.trim(), opcoesCampoCodigo.tamanho || 4);
           if (registro) {
             await colecaoEntidade(nomeColecao).doc(registro.id).update(dados);

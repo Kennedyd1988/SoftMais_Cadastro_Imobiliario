@@ -731,11 +731,6 @@ async function salvarBoletim(botao, area, registro, cadastros) {
 
       dataAtualizacao: dataLocalISO(),
       usuarioAtualizacaoNome: estado.dadosUsuario?.nome || estado.usuario?.email || "",
-      // Marca que esse boletim passou pela tela de edição manual (nunca
-      // setado pela importação do legado) — é o sinal que a exportação
-      // de alterações usa pra saber o que foi "incluído ou editado"
-      // desde a importação original.
-      tocadoManualmente: true,
     };
 
     // Campos de código fixo (natureza, edificação, estrutura, etc.)

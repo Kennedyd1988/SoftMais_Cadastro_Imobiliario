@@ -18,13 +18,20 @@
 //
 // Duas opções de escopo (valem pros dois formatos):
 // - "Tudo": todos os cadastros/boletins atuais da unidade gestora.
-// - "Somente alterados": só o que tem `tocadoManualmente === true` —
-//   esse campo é gravado em TODO salvamento manual pela tela do app
-//   (criar ou editar um cadastro de apoio, um boletim, um contribuinte
-//   etc.) e NUNCA pela importação do legado em si — então sobrevive a
-//   reimportações e serve de sinal confiável de "o que foi tocado
-//   depois da base original". Essa exportação nunca marca nada como
-//   "já exportado": sempre traz o acumulado completo desde a
+// - "Somente alterados": só o que tem pelo menos um registro de
+//   "criar" ou "editar" na coleção `historico` (o log de auditoria que
+//   já existia antes dessa funcionalidade — "quem alterou o quê e
+//   quando", gravado por `registrarHistorico()` em todo salvamento
+//   manual pela tela do app, nunca pela importação do legado em si).
+//   Usar o histórico em vez de marcar um campo novo no próprio
+//   registro tem uma vantagem importante: funciona retroativamente —
+//   cobre qualquer edição manual feita desde que o app foi colocado em
+//   uso, não só as feitas depois que esta tela existe. (Uma versão
+//   anterior desta exportação usava um campo `tocadoManualmente`
+//   gravado a partir desta versão — foi abandonado por só enxergar
+//   edições futuras, deixando de fora qualquer alteração manual feita
+//   antes do app ganhar essa tela.) Essa exportação nunca marca nada
+//   como "já exportado": sempre traz o acumulado completo desde a
 //   importação, mesmo que um registro já tenha saído numa exportação
 //   anterior (decisão explícita do usuário, pra nunca arriscar deixar
 //   algo de fora).
@@ -177,11 +184,34 @@ async function buscarColecaoEmLotes(consultaBase) {
   return todos;
 }
 
-/** Carrega os registros a exportar de uma coleção: tudo (paginado) ou só os tocados manualmente (conjunto já pequeno por definição). */
+/**
+ * IDs de uma coleção que tiveram pelo menos um "criar" ou "editar"
+ * manual registrado no histórico de auditoria (`registrarHistorico()`,
+ * já usado pela tela "Histórico de Alterações" desde a v1.0). A
+ * importação do legado nunca grava no histórico — só salvamentos
+ * manuais pela tela — então esse conjunto reflete exatamente "o que
+ * foi tocado manualmente", e funciona retroativamente (cobre qualquer
+ * edição feita desde que o app está em uso, não só a partir de agora).
+ * Usa um único filtro de igualdade (`colecao == nomeColecao`), que o
+ * Firestore indexa automaticamente — sem risco de precisar de índice
+ * composto.
+ */
+async function idsAlteradosDe(nomeColecao) {
+  const entradas = await buscarColecaoEmLotes(colecaoEntidade("historico").where("colecao", "==", nomeColecao));
+  const ids = new Set();
+  entradas.forEach((e) => {
+    if (e.acao === "criar" || e.acao === "editar") ids.add(e.documentoId);
+  });
+  return ids;
+}
+
+/** Carrega os registros a exportar de uma coleção: tudo (paginado) ou só os alterados manualmente (via histórico — conjunto já pequeno por definição). */
 async function carregarParaExportacao(nomeColecao, somenteAlterados) {
   if (somenteAlterados) {
-    const snapshot = await colecaoEntidade(nomeColecao).where("tocadoManualmente", "==", true).get();
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const ids = await idsAlteradosDe(nomeColecao);
+    if (ids.size === 0) return [];
+    const mapa = await buscarPorIds(nomeColecao, Array.from(ids));
+    return Array.from(mapa.values());
   }
   return buscarColecaoEmLotes(colecaoEntidade(nomeColecao).orderBy(firebase.firestore.FieldPath.documentId()));
 }
@@ -250,15 +280,21 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   const mapaLogradouros = new Map(logradourosTodos.map((r) => [r.id, r]));
   const mapaCondominios = new Map(condominiosTodos.map((r) => [r.id, r]));
 
-  const filtrar = (lista) => (somenteAlterados ? lista.filter((r) => r.tocadoManualmente) : lista);
-  const zonasExport = filtrar(zonasTodas);
-  const distritosExport = filtrar(distritosTodos);
-  const tiposImovelExport = filtrar(tiposImovelTodos);
-  const bairrosExport = filtrar(bairrosTodos);
-  const setoresExport = filtrar(setoresTodos);
-  const quadrasExport = filtrar(quadrasTodas);
-  const logradourosExport = filtrar(logradourosTodos);
-  const condominiosExport = filtrar(condominiosTodos);
+  let idsPorColecao = {};
+  if (somenteAlterados) {
+    const nomes = ["zonas", "distritos", "tiposImovel", "bairros", "setores", "quadras", "logradouros", "condominios"];
+    const conjuntos = await Promise.all(nomes.map((n) => idsAlteradosDe(n)));
+    nomes.forEach((n, i) => { idsPorColecao[n] = conjuntos[i]; });
+  }
+  const filtrar = (nomeColecao, lista) => (somenteAlterados ? lista.filter((r) => idsPorColecao[nomeColecao].has(r.id)) : lista);
+  const zonasExport = filtrar("zonas", zonasTodas);
+  const distritosExport = filtrar("distritos", distritosTodos);
+  const tiposImovelExport = filtrar("tiposImovel", tiposImovelTodos);
+  const bairrosExport = filtrar("bairros", bairrosTodos);
+  const setoresExport = filtrar("setores", setoresTodos);
+  const quadrasExport = filtrar("quadras", quadrasTodas);
+  const logradourosExport = filtrar("logradouros", logradourosTodos);
+  const condominiosExport = filtrar("condominios", condominiosTodos);
 
   barra.atualizarPercentual(20, "Lendo contribuintes");
   const contribuintesExport = await carregarParaExportacao("contribuintes", somenteAlterados);

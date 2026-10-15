@@ -154,10 +154,10 @@ Logradouro/Contribuinte, `origemLegadoId` em Boletim. Um registro
 criado direto no app (sem vir da importação) não tem esse campo até a
 primeira vez que entra numa Exportação de Alterações (menu
 Administração → Exportação de Alterações — detalhes no changelog da
-v1.9, abaixo). Todo cadastro também guarda
-`tocadoManualmente: true` quando passa por um salvamento manual pela
-tela (nunca pela importação), usado pra saber o que exportar no modo
-"somente alterados".
+v1.9, abaixo). O modo "somente alterados" dessa exportação usa a
+coleção `historico` (auditoria — ver changelog da v1.11) pra saber o
+que foi incluído/editado manualmente, não um campo marcado no próprio
+registro.
 
 O vínculo em cascata que permite o auto-preenchimento no boletim:
 **Logradouro → Bairro + CEP** (ao escolher o logradouro) e
@@ -420,7 +420,10 @@ atualização em campo:
     contribuinte etc.) grava um campo interno `tocadoManualmente:
     true`. A importação do legado nunca grava esse campo — então ele
     sobrevive a reimportações e serve de sinal confiável do que foi
-    tocado depois da base original.
+    tocado depois da base original. **(Substituído na v1.11 pela
+    coleção `historico` já existente — ver changelog da v1.11: o campo
+    só pegava edições feitas a partir desta versão, deixando de fora
+    qualquer alteração manual anterior.)**
   - **IDs legados (sq_*) de registros novos**: um cadastro criado do
     zero dentro do app (sem vir da importação) não tem um sq_* de
     origem. Na primeira vez que ele é exportado, o app gera um código
@@ -512,3 +515,31 @@ atualização em campo:
     das "Fatores de Qualidade do Imóvel" que o boletim já coleta
     (cobertura, forro, piso, conservação etc., que são atributos
     construtivos, não fatores de correção fiscal).
+
+- **v1.11** — Detecção do "somente alterados" trocada pra usar a
+  coleção `historico` (auditoria — "Histórico de Alterações" no menu,
+  existe desde a v1.0) em vez do campo `tocadoManualmente` criado na
+  v1.9. Motivo: `tocadoManualmente` só era gravado a partir da v1.9, ou
+  seja, só enxergava edições feitas depois dessa versão subir — toda
+  edição manual feita ANTES disso (praticamente toda a vida útil do
+  app até aqui) ficaria de fora do "somente alterados" na primeira
+  exportação, sem nenhum aviso. O histórico (`registrarHistorico()`)
+  já registra "criar"/"editar" em todo salvamento manual desde o
+  início, então usá-lo como fonte resolve isso de forma retroativa, sem
+  precisar de nenhuma migração de dado. O campo `tocadoManualmente` foi
+  removido de todos os formulários de salvamento (cadastros de apoio,
+  localização, contribuintes, boletins) — ele não é mais gravado nem
+  lido por nada.
+  - **Como funciona agora**: pra cada coleção, a exportação consulta
+    `historico` filtrando só por `colecao == <nome>` (um único filtro
+    de igualdade — nunca precisa de índice composto) e, do lado do
+    código, separa quais `documentoId` tiveram pelo menos um "criar" ou
+    "editar". Pra Contribuintes e Boletins (que podem crescer bastante),
+    esse conjunto de IDs é usado pra buscar só os documentos
+    necessários (`buscarPorIds`, em lotes de 10), em vez de baixar a
+    coleção inteira — continua nunca carregando mais do que precisa.
+  - Resultado idêntico ao visto no "Tudo" quando não há nenhuma
+    alteração manual registrada: a tela mostra "Nenhum registro foi
+    incluído ou editado manualmente ainda" e não gera arquivo — mas
+    agora isso só acontece quando é realmente verdade, não quando é só
+    o app achando que nada foi tocado por não ter o campo novo.
