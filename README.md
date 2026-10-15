@@ -543,3 +543,20 @@ atualização em campo:
     incluído ou editado manualmente ainda" e não gera arquivo — mas
     agora isso só acontece quando é realmente verdade, não quando é só
     o app achando que nada foi tocado por não ter o campo novo.
+
+- **v1.12** — Correção de um erro intermitente na exportação
+  (`the stored version does not match the required base version`),
+  que podia derrubar a exportação inteira em unidades gestoras com
+  muitos registros novos (sem sq_* de origem) pra gerar código ao mesmo
+  tempo. Causa raiz: várias tabelas resolvem os vínculos de cada linha
+  em paralelo (`Promise.all`); quando duas linhas diferentes apontavam
+  pro MESMO cadastro ainda sem código (ex: duas quadras do mesmo Setor
+  novo), cada uma disparava sua própria transação pra gerar um código
+  novo pro mesmo registro ao mesmo tempo, e as transações concorrentes
+  no documento contador (`controleExportacao/contadores`) entravam em
+  conflito. Corrigido fazendo chamadas concorrentes pro mesmo registro
+  compartilharem uma única transação em andamento (deduplicação por
+  coleção+ID), com uma segunda camada de nova tentativa automática (até
+  6 vezes, com pequena espera) caso ainda assim aconteça uma disputa
+  genuína entre registros diferentes. Sem isso, era preciso clicar em
+  "Gerar arquivo" de novo e torcer pra não bater na mesma disputa.

@@ -120,6 +120,17 @@ const CAMPO_SQ_POR_COLECAO = {
   condominios: "sqLegado",
 };
 
+// Várias tabelas resolvem vínculos em paralelo (Promise.all por
+// registro) — então é comum duas chamadas concorrentes pedirem um
+// código novo pro MESMO registro ao mesmo tempo (ex: duas quadras
+// diferentes apontando pro mesmo Setor novo, sem código ainda). Esse
+// cache garante que chamadas concorrentes pro mesmo registro
+// compartilhem a MESMA transação em vez de abrir uma cada, que é o que
+// causava contenção no documento `controleExportacao/contadores` e
+// gerava o erro "the stored version does not match the required base
+// version" (gravações concorrentes demais no mesmo documento).
+const _promessasCodigoEmAndamento = new Map();
+
 /**
  * Retorna o sq_* legado de um registro, gerando (e gravando de volta
  * no Firestore, pra ficar estável) um código novo se o registro nunca
@@ -130,18 +141,46 @@ async function obterOuGerarCodigoLegado(nomeColecao, registro) {
   const campo = CAMPO_SQ_POR_COLECAO[nomeColecao];
   if (registro[campo]) return String(registro[campo]);
 
-  const refContador = colecaoEntidade("controleExportacao").doc("contadores");
-  const novoCodigo = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(refContador);
-    const atual = snap.exists && snap.data()[nomeColecao] ? snap.data()[nomeColecao] : BASE_CODIGO_LEGADO_NOVO;
-    const proximo = atual + 1;
-    tx.set(refContador, { [nomeColecao]: proximo }, { merge: true });
-    return proximo;
-  });
+  const chave = `${nomeColecao}:${registro.id}`;
+  if (_promessasCodigoEmAndamento.has(chave)) {
+    return _promessasCodigoEmAndamento.get(chave);
+  }
 
-  await colecaoEntidade(nomeColecao).doc(registro.id).update({ [campo]: String(novoCodigo) });
-  registro[campo] = String(novoCodigo); // mantém o map local coerente pro resto da exportação
-  return String(novoCodigo);
+  const promessa = (async () => {
+    // Mesmo com a deduplicação acima, registros DIFERENTES que
+    // precisam de código novo ao mesmo tempo ainda disputam o mesmo
+    // documento contador — aqui fica uma segunda camada de segurança,
+    // tentando de novo (com uma pequena espera) se a transação falhar
+    // por contenção, em vez de derrubar a exportação inteira.
+    const MAX_TENTATIVAS = 6;
+    let ultimoErro;
+    for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+      try {
+        const refContador = colecaoEntidade("controleExportacao").doc("contadores");
+        const novoCodigo = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(refContador);
+          const atual = snap.exists && snap.data()[nomeColecao] ? snap.data()[nomeColecao] : BASE_CODIGO_LEGADO_NOVO;
+          const proximo = atual + 1;
+          tx.set(refContador, { [nomeColecao]: proximo }, { merge: true });
+          return proximo;
+        });
+        await colecaoEntidade(nomeColecao).doc(registro.id).update({ [campo]: String(novoCodigo) });
+        registro[campo] = String(novoCodigo); // mantém o map local coerente pro resto da exportação
+        return String(novoCodigo);
+      } catch (erro) {
+        ultimoErro = erro;
+        await new Promise((resolve) => setTimeout(resolve, 100 * tentativa + Math.random() * 100));
+      }
+    }
+    throw ultimoErro;
+  })();
+
+  _promessasCodigoEmAndamento.set(chave, promessa);
+  try {
+    return await promessa;
+  } finally {
+    _promessasCodigoEmAndamento.delete(chave);
+  }
 }
 
 /** Busca por lotes (chunks de 10, limite do operador "in" do Firestore) documentos específicos por ID. */
