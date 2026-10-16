@@ -204,7 +204,12 @@ async function buscarPorIds(nomeColecao, ids) {
  * não achar nenhum — nesse caso o co-proprietário é pulado na
  * exportação (nunca inventamos um sq_contribuinte).
  */
-async function buscarContribuintePorCpfCnpj(cpfCnpjNormalizado) {
+// ATENÇÃO (bug corrigido na v1.16): esta função tinha o mesmo nome da
+// buscarContribuintePorCpfCnpj de contribuintes.js e, por ser carregada
+// depois, SOBRESCREVIA a global — o boletim passava a buscar CPF com
+// pontuação ("123.456.789-00") sem normalizar e nunca achava o contribuinte.
+// Por isso o nome próprio abaixo.
+async function buscarContribuinteExportacaoPorCpfCnpj(cpfCnpjNormalizado) {
   if (!cpfCnpjNormalizado) return null;
   const snapshot = await colecaoEntidade("contribuintes").where("cpfCnpjNormalizado", "==", cpfCnpjNormalizado).limit(1).get();
   if (snapshot.docs.length === 0) return null;
@@ -357,6 +362,33 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   barra.atualizarPercentual(35, "Lendo boletins");
   const boletinsExport = await carregarParaExportacao("boletins", somenteAlterados);
 
+  // Boletins salvos antes da v1.16 (ou digitados com um proprietário que
+  // não existia em Contribuintes) não têm vínculo com Contribuinte — e no
+  // Contabilis só existe Contribuinte. Cria/liga agora, e grava o vínculo
+  // no boletim pra não repetir na próxima exportação.
+  const avisosColeta = [];
+  async function vincularContribuinte(b, prefixo, rotulo) {
+    const resultado = await garantirContribuinteDoBoletim({
+      nome: b[`${prefixo}Nome`], cpfCnpj: b[`${prefixo}CpfCnpj`], telefone: b[`${prefixo}Telefone`], celular: b[`${prefixo}Celular`], email: b[`${prefixo}Email`],
+    });
+    if (!resultado) {
+      avisosColeta.push(`Boletim ${b.origemLegadoId || b.id} (inscrição ${b.inscricaoImobiliaria || "?"}): ${rotulo} sem nome — o sq_contribuinte${prefixo === "responsavel" ? "Responsavel" : ""} sai em branco.`);
+      return;
+    }
+    const { contribuinte, criado } = resultado;
+    await colecaoEntidade("boletins").doc(b.id).update({ [`${prefixo}ContribuinteId`]: contribuinte.id });
+    b[`${prefixo}ContribuinteId`] = contribuinte.id;
+    if (criado) {
+      contribuintesExport.push(contribuinte);
+      avisosColeta.push(`Boletim ${b.origemLegadoId || b.id}: ${rotulo} "${contribuinte.nome}" não existia em Contribuintes — cadastrado agora${contribuinte.cpfCnpj ? "" : " (SEM CPF/CNPJ — confira)"}.`);
+    }
+    mapaContribuintes.set(contribuinte.id, contribuinte);
+  }
+  for (const b of boletinsExport) {
+    if (!b.proprietarioContribuinteId) await vincularContribuinte(b, "proprietario", "proprietário");
+    if (!b.mesmoResponsavelProprietario && !b.responsavelContribuinteId) await vincularContribuinte(b, "responsavel", "responsável");
+  }
+
   const idsContribuintesFaltando = [];
   boletinsExport.forEach((b) => {
     if (b.proprietarioContribuinteId && !mapaContribuintes.has(b.proprietarioContribuinteId)) idsContribuintesFaltando.push(b.proprietarioContribuinteId);
@@ -366,6 +398,17 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
     const extras = await buscarPorIds("contribuintes", idsContribuintesFaltando);
     extras.forEach((valor, chave) => mapaContribuintes.set(chave, valor));
   }
+  // Vínculo apontando para um Contribuinte que não existe mais: sem isso
+  // a exportação quebraria ao resolver o código. Trata como sem vínculo.
+  boletinsExport.forEach((b) => {
+    ["proprietario", "responsavel"].forEach((prefixo) => {
+      const id = b[`${prefixo}ContribuinteId`];
+      if (id && !mapaContribuintes.has(id)) {
+        avisosColeta.push(`Boletim ${b.origemLegadoId || b.id}: o contribuinte vinculado como ${prefixo === "responsavel" ? "responsável" : "proprietário"} não existe mais — sai em branco.`);
+        b[`${prefixo}ContribuinteId`] = null;
+      }
+    });
+  });
 
   logExportacao(
     `Registros a exportar: ${zonasExport.length} zonas, ${distritosExport.length} distritos, ${tiposImovelExport.length} tipos de imóvel, ${secoesExport.length} seções, ${bairrosExport.length} bairros, ${setoresExport.length} setores, ${quadrasExport.length} quadras, ${logradourosExport.length} logradouros, ${contribuintesExport.length} contribuintes, ${boletinsExport.length} boletins.`
@@ -413,7 +456,7 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
     cnpj,
     zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport, contribuintesExport, condominiosExport, secoesExport, boletinsExport,
     mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras, mapaLogradouros, mapaContribuintes, mapaCondominios, mapaSecoes,
-    sqDe,
+    sqDe, avisosColeta,
   };
 }
 
@@ -482,8 +525,9 @@ async function executarExportacaoLegado(somenteAlterados) {
     const {
       cnpj, zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport,
       contribuintesExport, secoesExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
-      mapaLogradouros, mapaContribuintes, mapaSecoes, sqDe,
+      mapaLogradouros, mapaContribuintes, mapaSecoes, sqDe, avisosColeta,
     } = dados;
+    avisosColeta.forEach((aviso) => logExportacao(`⚠️ ${aviso}`));
 
     barra.atualizarPercentual(70, "Montando planilha");
     const livro = XLSX.utils.book_new();
@@ -729,10 +773,11 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
     const {
       cnpj, zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport,
       contribuintesExport, condominiosExport, secoesExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
-      mapaLogradouros, mapaContribuintes, mapaCondominios, mapaSecoes, sqDe,
+      mapaLogradouros, mapaContribuintes, mapaCondominios, mapaSecoes, sqDe, avisosColeta,
     } = dados;
 
-    const avisos = [];
+    const avisos = [...avisosColeta];
+    const imoveisLegiveis = []; // visão em texto corrido, só para o relatório de conferência
     barra.atualizarPercentual(70, "Montando as tabelas");
 
     // Cada tabela: { campos: [ordem dos campos no XML], linhas: [{campo: valor}] }
@@ -858,7 +903,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       for (const co of coProprietarios) {
         const percentual = Number(co.percentual) || 0;
         somaPercentualDemais += percentual;
-        const contribuinteCo = await buscarContribuintePorCpfCnpj(apenasDigitos(co.cpfCnpj));
+        const contribuinteCo = await buscarContribuinteExportacaoPorCpfCnpj(apenasDigitos(co.cpfCnpj));
         if (!contribuinteCo) {
           avisos.push(`Imóvel ${sqImovel}: co-proprietário "${co.nome || co.cpfCnpj}" não tem um Contribuinte cadastrado com esse CPF/CNPJ — não entrou no PROPRIETARIO.`);
           continue;
@@ -906,6 +951,12 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
         sq_modoCadastral: "", sq_motivoExclusao: "", nu_laudoAvaliacao: "", nu_processoAlteracao: "", nu_processoExclusao: "", nu_processoPenhora: "",
         cd_cib: "",
       });
+      imoveisLegiveis.push([
+        sqImovel, r.inscricaoImobiliaria || "", `${r.logradouroTipo ? r.logradouroTipo + " " : ""}${r.logradouroNome || ""}`, r.numero || "", r.bairroNome || "",
+        r.quadraNome || "", r.setorNome || "", r.distritoNome || "", r.tipoImovelNome || "", r.secaoNome || "", r.condominioNome || "",
+        r.proprietarioNome || "", r.proprietarioCpfCnpj || "", sqContribuinte,
+        r.mesmoResponsavelProprietario ? "(mesmo do proprietário)" : (r.responsavelNome || ""), sqContribuinteResponsavel,
+      ]);
 
       const temArea = [
         r.areaTerrenoFrente, r.areaTerrenoFundo, r.areaTerrenoLadoDireito, r.areaTerrenoLadoEsquerdo, r.areaTerrenoTotal,
@@ -973,13 +1024,46 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       zip.file(`${prefixo}_${nomeTabela}.xml`, paraBytesLatin1(xml), { binary: true });
     });
 
+    // -------- Relatório de conferência (planilha) dentro do próprio .zip --------
+    // Mostra EXATAMENTE as linhas que foram para cada XML (uma aba por
+    // tabela) + um resumo + uma visão em texto corrido dos imóveis, para
+    // conferir antes de importar. Não é lido pelo Contabilis.
+    const livro = XLSX.utils.book_new();
+    const resumo = [
+      ["RELATÓRIO DE CONFERÊNCIA — Exportação Contabilis"],
+      ["Gerado em", new Date().toLocaleString("pt-BR")],
+      ["Escopo", somenteAlterados ? "Somente alterados (via histórico)" : "Tudo"],
+      ["CNPJ (nu_cnpj)", cnpj],
+      [],
+      ["Arquivo", "Tabela", "Linhas"],
+      ...ordemTabelas.map((nomeTabela, indice) => [`${String(indice + 1).padStart(2, "0")}_${nomeTabela}.xml`, nomeTabela, tabelas[nomeTabela].linhas.length]),
+      [],
+      [`Avisos (${avisos.length})`],
+      ...(avisos.length > 0 ? avisos.map((a) => [a]) : [["Nenhum aviso."]]),
+    ];
+    XLSX.utils.book_append_sheet(livro, XLSX.utils.aoa_to_sheet(resumo), "RESUMO");
+    ordemTabelas.forEach((nomeTabela) => {
+      const tabela = tabelas[nomeTabela];
+      const matriz = [tabela.campos, ...tabela.linhas.map((linha) => tabela.campos.map((campo) => (linha[campo] === undefined || linha[campo] === null ? "" : String(linha[campo]))))];
+      XLSX.utils.book_append_sheet(livro, XLSX.utils.aoa_to_sheet(matriz), nomeTabela);
+    });
+    XLSX.utils.book_append_sheet(
+      livro,
+      XLSX.utils.aoa_to_sheet([
+        ["sq_imovel", "Inscrição", "Logradouro", "Número", "Bairro", "Quadra", "Setor", "Distrito", "Tipo de imóvel", "Seção", "Condomínio", "Proprietário", "CPF/CNPJ", "sq_contribuinte", "Responsável", "sq_contribuinteResponsavel"],
+        ...imoveisLegiveis,
+      ]),
+      "IMOVEIS_LEGIVEL"
+    );
+    zip.file("00_RELATORIO_CONFERENCIA.xlsx", XLSX.write(livro, { type: "array", bookType: "xlsx" }), { binary: true });
+
     const blob = await zip.generateAsync({ type: "blob" });
     const sufixo = somenteAlterados ? "alteracoes" : "completa";
     baixarArquivoBinario(blob, `exportacao-contabilis-${sufixo}-${dataLocalISO()}.zip`);
 
     avisos.forEach((aviso) => logExportacao(`⚠️ ${aviso}`));
     barra.atualizarPercentual(100, "Concluído");
-    logExportacao("✅ Arquivos XML gerados com sucesso (compactados em .zip). Os arquivos já saem numerados na ordem de importação recomendada.");
+    logExportacao("✅ Arquivos XML gerados com sucesso (compactados em .zip). Os arquivos já saem numerados na ordem de importação recomendada. O .zip também traz o 00_RELATORIO_CONFERENCIA.xlsx para você conferir cada tabela antes de importar.");
     mostrarToast(avisos.length > 0 ? "Arquivos gerados com avisos — veja o log." : "Arquivos XML gerados com sucesso.", avisos.length > 0 ? "aviso" : "sucesso");
   } catch (erro) {
     console.error(erro);

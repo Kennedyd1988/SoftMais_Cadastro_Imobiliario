@@ -587,3 +587,19 @@ atualização em campo:
   preciso reimportar a planilha (a importação é idempotente, mas
   atualiza os campos vindos da planilha). `nu_aliquota` e `fl_irregular`
   seguem em branco, por decisão do usuário.
+- **v1.16** — Proprietário sempre vira Contribuinte. No Contabilis não há
+  "proprietário" como cadastro: só Contribuinte. Antes, um proprietário
+  (ou responsável) digitado no boletim e não encontrado pelo CPF/CNPJ
+  ficava salvo só dentro do boletim — na exportação ele não entrava na
+  tabela CONTRIBUINTE, o `sq_contribuinte` do IMOVEL saía em branco e ele
+  ficava fora da PROPRIETARIO. Agora o boletim cria (ou reaproveita, pelo
+  CPF/CNPJ) o Contribuinte ao salvar, e a exportação faz o mesmo para
+  boletins antigos sem vínculo, gravando o vínculo no boletim. Boletim
+  sem nome de proprietário continua saindo em branco, com aviso no log.
+  Também corrigido um bug da v1.10: a função de busca de contribuinte da
+  exportação tinha o mesmo nome da de `contribuintes.js` e a sobrescrevia
+  (o boletim passava a não achar contribuinte por CPF com pontuação) —
+  renomeada. Novo: o .zip da exportação XML agora traz
+  `00_RELATORIO_CONFERENCIA.xlsx` (resumo + avisos, uma aba por tabela com
+  as mesmas linhas dos XMLs e a aba IMOVEIS_LEGIVEL com nomes), só para
+  conferência; não é importado no Contabilis.

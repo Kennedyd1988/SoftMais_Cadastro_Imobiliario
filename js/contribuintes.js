@@ -159,6 +159,31 @@ function formatarCpfCnpj(valor) {
  * CPF/CNPJ digitado, pra auto-preencher nome/telefone/e-mail. Retorna
  * null se não encontrar (a tela do Boletim oferece cadastrar na hora).
  */
+/**
+ * Garante que o proprietário/responsável digitado num boletim exista como
+ * Contribuinte. Por que existe: no Contabilis não há "proprietário" como
+ * cadastro à parte — só Contribuinte. Antes da v1.16, quem não era
+ * encontrado pelo CPF/CNPJ ficava salvo só dentro do boletim, e na
+ * exportação sumia da tabela CONTRIBUINTE e deixava o sq_contribuinte do
+ * IMOVEL em branco. Reaproveita o cadastro quando o CPF/CNPJ já existe.
+ * Retorna { contribuinte, criado } ou null se não há nome.
+ */
+async function garantirContribuinteDoBoletim({ nome, cpfCnpj, telefone, celular, email, endereco, bairro, cep }) {
+  const nomeLimpo = (nome || "").trim();
+  if (!nomeLimpo) return null;
+  const existente = await buscarContribuintePorCpfCnpj(cpfCnpj);
+  if (existente) return { contribuinte: existente, criado: false };
+  const dados = {
+    nome: nomeLimpo, nomeNormalizado: normalizarTexto(nomeLimpo),
+    cpfCnpj: (cpfCnpj || "").trim(), cpfCnpjNormalizado: apenasDigitos(cpfCnpj),
+    telefone: telefone || "", celular: celular || "", email: email || "",
+    endereco: endereco || "", bairro: bairro || "", cep: cep || "",
+  };
+  const ref = await colecaoEntidade("contribuintes").add(dados);
+  registrarHistorico("contribuintes", ref.id, "criar", nomeLimpo);
+  return { contribuinte: { id: ref.id, ...dados }, criado: true };
+}
+
 async function buscarContribuintePorCpfCnpj(cpfCnpjDigitado) {
   const termo = apenasDigitos(cpfCnpjDigitado);
   if (!termo) return null;

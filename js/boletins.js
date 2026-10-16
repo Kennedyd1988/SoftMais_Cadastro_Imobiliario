@@ -460,6 +460,7 @@ async function abrirEditorBoletim(area, registro) {
   }
   ligarBuscaContribuinte("proprietario");
   if (r.proprietarioContribuinteId) area.dataset.proprietarioContribuinteId = r.proprietarioContribuinteId;
+  if (r.responsavelContribuinteId) area.dataset.responsavelContribuinteId = r.responsavelContribuinteId;
 
   const campoMesmoResponsavel = document.getElementById("campo-mesmo-responsavel");
   const blocoResponsavel = document.getElementById("bloco-responsavel");
@@ -664,6 +665,32 @@ async function salvarBoletim(botao, area, registro, cadastros) {
     const unidadeFormatada = document.getElementById("campo-unidade").value.trim() ? preencherZeros(document.getElementById("campo-unidade").value, 3) : "";
     const corrMesmoProprietario = document.getElementById("campo-corr-mesmo-proprietario").checked;
 
+    // Garante que proprietário e responsável existam como Contribuinte
+    // (ver garantirContribuinteDoBoletim em contribuintes.js).
+    let proprietarioContribuinteId = area.dataset.proprietarioContribuinteId || null;
+    if (!proprietarioContribuinteId) {
+      const resultado = await garantirContribuinteDoBoletim({
+        nome: campoProprietarioNome.value, cpfCnpj: document.getElementById("campo-proprietario-cpfcnpj").value,
+        telefone: document.getElementById("campo-proprietario-telefone").value.trim(), celular: document.getElementById("campo-proprietario-celular").value.trim(),
+        email: document.getElementById("campo-proprietario-email").value.trim(),
+      });
+      proprietarioContribuinteId = resultado?.contribuinte.id || null;
+      if (resultado) area.dataset.proprietarioContribuinteId = proprietarioContribuinteId;
+    }
+    let responsavelContribuinteId = null;
+    if (!mesmoResponsavel) {
+      responsavelContribuinteId = area.dataset.responsavelContribuinteId || null;
+      if (!responsavelContribuinteId) {
+        const resultado = await garantirContribuinteDoBoletim({
+          nome: document.getElementById("campo-responsavel-nome").value, cpfCnpj: document.getElementById("campo-responsavel-cpfcnpj").value,
+          telefone: document.getElementById("campo-responsavel-telefone").value.trim(), celular: document.getElementById("campo-responsavel-celular").value.trim(),
+          email: document.getElementById("campo-responsavel-email").value.trim(),
+        });
+        responsavelContribuinteId = resultado?.contribuinte.id || null;
+        if (resultado) area.dataset.responsavelContribuinteId = responsavelContribuinteId;
+      }
+    }
+
     const dados = {
       inscricaoImobiliaria: inscricao,
       inscricaoImobiliariaAnterior: document.getElementById("campo-inscricao-anterior").value.trim(),
@@ -683,7 +710,7 @@ async function salvarBoletim(botao, area, registro, cadastros) {
       medidorAgua: document.getElementById("campo-medidor-agua").value.trim(),
       medidorEnergia: document.getElementById("campo-medidor-energia").value.trim(),
 
-      proprietarioContribuinteId: area.dataset.proprietarioContribuinteId || null,
+      proprietarioContribuinteId,
       proprietarioNome: campoProprietarioNome.value.trim(),
       proprietarioNomeNormalizado: normalizarTexto(campoProprietarioNome.value.trim()),
       proprietarioCpfCnpj: document.getElementById("campo-proprietario-cpfcnpj").value.trim(),
@@ -692,7 +719,7 @@ async function salvarBoletim(botao, area, registro, cadastros) {
       proprietarioEmail: document.getElementById("campo-proprietario-email").value.trim(),
 
       mesmoResponsavelProprietario: mesmoResponsavel,
-      responsavelContribuinteId: mesmoResponsavel ? null : area.dataset.responsavelContribuinteId || null,
+      responsavelContribuinteId,
       responsavelNome: mesmoResponsavel ? campoProprietarioNome.value.trim() : document.getElementById("campo-responsavel-nome").value.trim(),
       responsavelCpfCnpj: mesmoResponsavel ? document.getElementById("campo-proprietario-cpfcnpj").value.trim() : document.getElementById("campo-responsavel-cpfcnpj").value.trim(),
       responsavelTelefone: mesmoResponsavel ? document.getElementById("campo-proprietario-telefone").value.trim() : document.getElementById("campo-responsavel-telefone").value.trim(),
