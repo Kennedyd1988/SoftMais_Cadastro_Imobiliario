@@ -107,6 +107,25 @@
 
 const BASE_CODIGO_LEGADO_NOVO = 900000;
 
+// Última sequência JÁ USADA em cada tabela do Contabilis (lida das telas
+// internas do Contabilis em 16/10/2026). Registro novo criado no app
+// recebe o próximo número depois dela, em vez de 900001 — assim o código
+// segue a sequência do Contabilis. Tabelas sem valor aqui (e sem valor
+// salvo na tela de exportação) continuam na faixa 900001+. O valor
+// editável fica em `controleExportacao/ultimasSequencias`.
+const ULTIMA_SEQUENCIA_CONTABILIS_PADRAO = {
+  bairros: 31,
+  quadras: 40,
+  logradouros: 486,
+  contribuintes: 11397,
+  boletins: 1267,
+};
+const ROTULOS_SEQUENCIA = {
+  zonas: "Zona", distritos: "Distrito", tiposImovel: "Tipo de imóvel", secoes: "Seção", bairros: "Bairro",
+  setores: "Setor", quadras: "Quadra", logradouros: "Logradouro", condominios: "Condomínio",
+  contribuintes: "Contribuinte", boletins: "Imóvel (sq_imovel)",
+};
+
 const CAMPO_SQ_POR_COLECAO = {
   zonas: "sqLegado",
   distritos: "sqLegado",
@@ -160,7 +179,12 @@ async function obterOuGerarCodigoLegado(nomeColecao, registro) {
         const refContador = colecaoEntidade("controleExportacao").doc("contadores");
         const novoCodigo = await db.runTransaction(async (tx) => {
           const snap = await tx.get(refContador);
-          const atual = snap.exists && snap.data()[nomeColecao] ? snap.data()[nomeColecao] : BASE_CODIGO_LEGADO_NOVO;
+          const snapSequencias = await tx.get(colecaoEntidade("controleExportacao").doc("ultimasSequencias"));
+          const baseConfigurada = Number((snapSequencias.exists && snapSequencias.data()[nomeColecao]) || ULTIMA_SEQUENCIA_CONTABILIS_PADRAO[nomeColecao] || BASE_CODIGO_LEGADO_NOVO);
+          // max(): se já foi gerado código maior (ex: exportação anterior
+          // na faixa 900001+), nunca volta atrás nem repete número.
+          const jaGerado = snap.exists && snap.data()[nomeColecao] ? Number(snap.data()[nomeColecao]) : 0;
+          const atual = Math.max(jaGerado, baseConfigurada);
           const proximo = atual + 1;
           tx.set(refContador, { [nomeColecao]: proximo }, { merge: true });
           return proximo;
@@ -497,10 +521,47 @@ async function renderizarExportacaoLegado(area) {
       Essa exportação sempre traz o acumulado completo desde a importação — nunca marca
       nada como "já exportado", então um registro pode aparecer em mais de uma exportação.
     </p>
+    <details class="secao-formulario" style="margin:16px 0">
+      <summary>Última sequência usada no Contabilis (códigos dos registros novos)</summary>
+      <div class="conteudo-secao-formulario">
+        <p class="texto-secundario">
+          Um registro criado no app recebe o próximo número depois da última sequência do
+          Contabilis. Confira nas tabelas internas do Contabilis e atualize aqui antes de
+          exportar — principalmente se alguém cadastrou algo direto no Contabilis. Em branco =
+          usa a faixa 900001 em diante. Códigos já gerados em exportações anteriores não mudam.
+        </p>
+        <div id="campos-sequencias"></div>
+        <button class="botao-secundario" id="btn-salvar-sequencias">Salvar sequências</button>
+      </div>
+    </details>
     <button class="botao-primario" id="btn-gerar-exportacao">⬇️ Gerar arquivo</button>
     <div id="area-progresso-exportacao" style="margin-top:16px"></div>
     <div id="area-log-exportacao" class="caixa-log-importacao"></div>
   `;
+
+  // -------- Última sequência por tabela do Contabilis --------
+  let sequenciasSalvas = {};
+  try {
+    const snap = await colecaoEntidade("controleExportacao").doc("ultimasSequencias").get();
+    if (snap.exists) sequenciasSalvas = snap.data();
+  } catch (erro) { console.error(erro); }
+  document.getElementById("campos-sequencias").innerHTML = Object.keys(ROTULOS_SEQUENCIA).map((colecao) => `
+    <div class="linha-formulario">
+      <div><label>${ROTULOS_SEQUENCIA[colecao]}</label>
+      <input type="text" inputmode="numeric" data-sequencia="${colecao}" value="${sequenciasSalvas[colecao] || ULTIMA_SEQUENCIA_CONTABILIS_PADRAO[colecao] || ""}"></div>
+    </div>`).join("");
+  document.getElementById("btn-salvar-sequencias").addEventListener("click", (evento) => {
+    executarComFeedback(evento.target, async () => {
+      const valores = {};
+      document.querySelectorAll("[data-sequencia]").forEach((campo) => {
+        const numero = parseInt(apenasDigitos(campo.value), 10);
+        if (numero > 0) valores[campo.dataset.sequencia] = numero;
+      });
+      // Sem merge: campo apagado volta a usar o padrão / faixa 900001.
+      await colecaoEntidade("controleExportacao").doc("ultimasSequencias").set(valores);
+      mostrarToast("Sequências salvas.", "sucesso");
+    }, "Salvando...");
+  });
 
   document.getElementById("btn-gerar-exportacao").addEventListener("click", (evento) => {
     const somenteAlterados = document.querySelector('input[name="modo-exportacao"]:checked').value === "alterados";

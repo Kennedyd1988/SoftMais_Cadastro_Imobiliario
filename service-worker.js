@@ -4,10 +4,10 @@
 // depois de uma atualização — sempre que publicar um arquivo .js ou
 // .css novo, aumente o número da versão abaixo (v1 -> v2 -> ...).
 
-const NOME_CACHE = "soft-cadastro-imobiliario-v17";
+const NOME_CACHE = "soft-cadastro-imobiliario-v18";
 const ARQUIVOS_ESSENCIAIS = [
   "./index.html",
-  "./css/estilos.css?v=17",
+  "./css/estilos.css?v=18",
   "./manifest.json",
   "./logo-horizontal.png",
   "./logo-simbolo.png",

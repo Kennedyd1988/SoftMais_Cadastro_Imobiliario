@@ -603,3 +603,16 @@ atualização em campo:
   `00_RELATORIO_CONFERENCIA.xlsx` (resumo + avisos, uma aba por tabela com
   as mesmas linhas dos XMLs e a aba IMOVEIS_LEGIVEL com nomes), só para
   conferência; não é importado no Contabilis.
+- **v1.17** — Códigos de registros novos seguem a sequência do Contabilis.
+  Antes, tudo que era criado no app recebia 900001 em diante. Agora o
+  próximo número vem depois da última sequência de cada tabela do
+  Contabilis (informada pelo usuário em 16/10/2026: bairro 31, quadra 40,
+  logradouro 486, contribuinte 11397, imóvel 1267). Os valores ficam
+  editáveis na tela Exportação de Alterações (documento
+  `controleExportacao/ultimasSequencias`) — atualize antes de exportar se
+  algo foi cadastrado direto no Contabilis. Tabelas sem valor informado
+  (zona, distrito, tipo de imóvel, seção, setor, condomínio) seguem em
+  900001+. Código já gerado antes nunca muda (usa o maior entre o já
+  gerado e o informado). Limitação conhecida: no Contabilis uma quadra
+  pode pertencer a vários setores (SETOR_QUADRA), e a importação do
+  legado guarda só um setor por quadra.

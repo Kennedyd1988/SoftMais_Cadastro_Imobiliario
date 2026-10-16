@@ -2,7 +2,7 @@
 // NÚCLEO DO APP — autenticação, permissões, navegação, utilidades
 // ===================================================================
 
-const VERSAO_APP = "1.16";
+const VERSAO_APP = "1.17";
 document.addEventListener("DOMContentLoaded", () => {
   const elementoLogin = document.getElementById("versao-app-login");
   if (elementoLogin) elementoLogin.textContent = `v${VERSAO_APP}`;
