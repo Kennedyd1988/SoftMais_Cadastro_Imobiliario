@@ -17,6 +17,7 @@ const MAPA_REFERENCIAS_APOIO = {
   quadras: [{ colecao: "boletins", campo: "quadraId", rotulo: "Boletins" }],
   condominios: [{ colecao: "boletins", campo: "condominioId", rotulo: "Boletins" }],
   tiposImovel: [{ colecao: "boletins", campo: "tipoImovelId", rotulo: "Boletins" }],
+  secoes: [{ colecao: "boletins", campo: "secaoId", rotulo: "Boletins" }],
   contribuintes: [
     { colecao: "boletins", campo: "proprietarioContribuinteId", rotulo: "Boletins (proprietário)" },
     { colecao: "boletins", campo: "responsavelContribuinteId", rotulo: "Boletins (responsável)" },

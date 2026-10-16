@@ -98,6 +98,7 @@ async function executarImportacaoLegado(arquivo) {
     const zonas = lerAba("ZONA");
     const distritos = lerAba("DISTRITO");
     const tiposImovel = lerAba("TIPO_IMOVEL");
+    const secoes = lerAba("SECAO");
     const bairros = lerAba("BAIRRO");
     const setoresMunicipio = lerAba("SETOR_MUNICIPIO");
     const setorQuadra = lerAba("SETOR_QUADRA");
@@ -134,6 +135,20 @@ async function executarImportacaoLegado(arquivo) {
         const codigo = preencherZeros(String(indice + 1), 2);
         mapaDistritos[linha.sq_distrito] = { id, nome: linha.nm_distrito, codigo };
         lote.set(colecaoEntidade("distritos").doc(id), { nome: linha.nm_distrito, nomeNormalizado: normalizarTexto(linha.nm_distrito), codigo, sqLegado: String(linha.sq_distrito) }, { merge: true });
+      })
+    );
+
+    // -------- 2b. SEÇÕES --------
+    // A aba SECAO (nm_secao, ex: "10144D") liga-se ao imóvel por
+    // IMOVEL.sq_secao. Antes da v1.15 essa aba era ignorada e a seção
+    // se perdia na importação — e, por consequência, na exportação.
+    const mapaSecoes = {};
+    await commitEmLotes(
+      secoes.filter((linha) => linha.sq_secao !== "" && linha.nm_secao !== "").map((linha) => (lote) => {
+        const id = `legado_secao_${linha.sq_secao}`;
+        const nome = String(linha.nm_secao);
+        mapaSecoes[linha.sq_secao] = { id, nome };
+        lote.set(colecaoEntidade("secoes").doc(id), { nome, nomeNormalizado: normalizarTexto(nome), sqLegado: String(linha.sq_secao) }, { merge: true });
       })
     );
 
@@ -291,6 +306,7 @@ async function executarImportacaoLegado(arquivo) {
       const quadra = mapaQuadras[linha.sq_quadra];
       const bairro = mapaBairros[linha.sq_bairro];
       const tipoImovel = mapaTiposImovel[linha.sq_tipoImovel];
+      const secao = linha.sq_secao ? mapaSecoes[linha.sq_secao] : null;
       const proprietario = mapaContribuintes[linha.sq_contribuinte];
       const responsavel = linha.sq_contribuinteResponsavel ? mapaContribuintes[linha.sq_contribuinteResponsavel] : null;
       const area = mapaAreas[linha.sq_imovel];
@@ -320,6 +336,7 @@ async function executarImportacaoLegado(arquivo) {
         lote: String(linha.nu_lote || ""),
         unidade: String(linha.nu_unidade || ""),
         tipoImovelId: tipoImovel?.id || null, tipoImovelNome: tipoImovel?.nome || "",
+        secaoId: secao?.id || null, secaoNome: secao?.nome || "",
         medidorAgua: String(linha.nu_medidorAgua || ""),
         medidorEnergia: String(linha.nu_medidorEnergia || ""),
 
@@ -375,7 +392,7 @@ async function executarImportacaoLegado(arquivo) {
     await commitEmLotes(operacoesImoveis);
 
     barra.atualizarPercentual(100, "Concluído");
-    logImportacao(`✅ Importação concluída: ${zonas.length} zonas, ${distritos.length} distritos, ${tiposImovel.length} tipos de imóvel, ${bairros.length} bairros, ${setoresMunicipio.length} setores, ${quadras.length} quadras, ${logradouros.length} logradouros, ${contribuintes.length} contribuintes, ${imoveis.length} boletins.`);
+    logImportacao(`✅ Importação concluída: ${zonas.length} zonas, ${distritos.length} distritos, ${tiposImovel.length} tipos de imóvel, ${secoes.length} seções, ${bairros.length} bairros, ${setoresMunicipio.length} setores, ${quadras.length} quadras, ${logradouros.length} logradouros, ${contribuintes.length} contribuintes, ${imoveis.length} boletins.`);
     if (imoveisSemLogradouro > 0) logImportacao(`⚠️ ${imoveisSemLogradouro} imóvel(is) importado(s) sem logradouro vinculado — confira e complete manualmente no boletim.`);
     if (imoveisSemQuadra > 0) logImportacao(`⚠️ ${imoveisSemQuadra} imóvel(is) importado(s) sem quadra vinculada — confira e complete manualmente no boletim.`);
     mostrarToast("Importação do legado concluída com sucesso.", "sucesso");

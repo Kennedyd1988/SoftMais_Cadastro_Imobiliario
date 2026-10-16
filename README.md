@@ -560,3 +560,30 @@ atualização em campo:
   6 vezes, com pequena espera) caso ainda assim aconteça uma disputa
   genuína entre registros diferentes. Sem isso, era preciso clicar em
   "Gerar arquivo" de novo e torcer pra não bater na mesma disputa.
+
+- **v1.13** — A exportação agora confere o CNPJ da prefeitura/ente antes
+  de começar: o `nu_cnpj` de todas as tabelas vem do cadastro em
+  Administração → Prefeituras / Entes, e se esse campo estiver vazio o
+  XML saía com `<nu_cnpj></nu_cnpj>` (tag vazia) e a importação no
+  Contabilis falharia. Agora a exportação para com um aviso pedindo pra
+  preencher o CNPJ, e o log mostra qual CNPJ está sendo usado.
+- **v1.14** — Conferência tag a tag dos XMLs gerados contra os exemplos
+  reais do Contabilis: as 13 tabelas exportadas (ZONA, DISTRITO,
+  TIPO_IMOVEL, SECAO, BAIRRO, SETOR_MUNICIPIO, QUADRA, SETOR_QUADRA,
+  LOGRADOURO, BAIRRO_LOGRADOURO, CONTRIBUINTE, IMOVEL, AREA_IMOVEL) têm
+  exatamente as mesmas tags e na mesma ordem dos exemplos. Único ajuste
+  de valor: TIPO_IMOVEL passa a sair com `fl_validarTerreno` e
+  `fl_validarConstrucao` = "False" (como no exemplo). `nu_aliquota`
+  (TIPO_IMOVEL) e `fl_irregular` (AREA_IMOVEL) continuam em branco porque
+  o app não coleta esses dados. FATOR e FATOR_IMOVEL seguem ignorados.
+- **v1.15** — Seção passa a existir no app. Antes, a aba SECAO e o
+  `sq_secao` do IMOVEL da planilha legada eram ignorados na importação,
+  então a exportação (XLSX e XML) saía sem seção. Agora: novo cadastro
+  "Seções" (Cadastros de Apoio), campo "Seção" no boletim (bloco 03 —
+  Localização), importação lê a aba SECAO e liga cada imóvel pelo
+  `sq_secao`, e a exportação gera a tabela SECAO e preenche `sq_secao`
+  no IMOVEL. Seção nova criada no app recebe código 900001+ como os
+  demais cadastros. Para trazer a seção dos imóveis já importados é
+  preciso reimportar a planilha (a importação é idempotente, mas
+  atualiza os campos vindos da planilha). `nu_aliquota` e `fl_irregular`
+  seguem em branco, por decisão do usuário.

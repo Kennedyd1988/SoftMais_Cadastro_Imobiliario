@@ -53,7 +53,7 @@
 //   1. ZONA           (sem dependência)
 //   2. DISTRITO       (sem dependência)
 //   3. TIPO_IMOVEL    (sem dependência)
-//   4. SECAO          (sem dependência — fica sempre vazia, ver limitações)
+//   4. SECAO          (sem dependência — cadastro "Seções" do app, a partir da v1.15)
 //   5. BAIRRO         (depende de ZONA)
 //   6. SETOR_MUNICIPIO(depende de DISTRITO)
 //   7. QUADRA         (sem dependência)
@@ -118,6 +118,7 @@ const CAMPO_SQ_POR_COLECAO = {
   contribuintes: "codigoLegado",
   boletins: "origemLegadoId",
   condominios: "sqLegado",
+  secoes: "sqLegado",
 };
 
 // Várias tabelas resolvem vínculos em paralelo (Promise.all por
@@ -296,10 +297,21 @@ function logExportacao(mensagem) {
 // COLETA DE DADOS — compartilhada pelos dois formatos de exportação
 // ===================================================================
 async function coletarDadosExportacao(somenteAlterados, barra) {
+  // O CNPJ vem do cadastro da prefeitura/ente (menu Administração →
+  // Prefeituras / Entes). Todas as tabelas do Contabilis exigem
+  // `nu_cnpj` — sem ele o XML sairia com a tag vazia e a importação
+  // falharia, então a exportação para aqui em vez de gerar um arquivo
+  // inútil.
   const cnpj = apenasDigitos(estado.entidadeAtualDados?.cnpj || "");
+  if (!cnpj) {
+    logExportacao("❌ Esta prefeitura/ente não tem CNPJ cadastrado. Abra Administração → Prefeituras / Entes, preencha o CNPJ e gere o arquivo de novo.");
+    mostrarToast("Cadastre o CNPJ da prefeitura/ente antes de exportar.", "erro");
+    return null;
+  }
+  logExportacao(`CNPJ usado em todas as tabelas (nu_cnpj): ${cnpj}`);
 
   barra.atualizarPercentual(5, "Lendo cadastros de apoio");
-  const [zonasTodas, distritosTodos, tiposImovelTodos, bairrosTodos, setoresTodos, quadrasTodas, logradourosTodos, condominiosTodos] = await Promise.all([
+  const [zonasTodas, distritosTodos, tiposImovelTodos, bairrosTodos, setoresTodos, quadrasTodas, logradourosTodos, condominiosTodos, secoesTodas] = await Promise.all([
     carregarListaCompleta("zonas"),
     carregarListaCompleta("distritos"),
     carregarListaCompleta("tiposImovel"),
@@ -308,6 +320,7 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
     carregarListaCompleta("quadras"),
     carregarListaCompleta("logradouros"),
     carregarListaCompleta("condominios"),
+    carregarListaCompleta("secoes"),
   ]);
 
   const mapaZonas = new Map(zonasTodas.map((r) => [r.id, r]));
@@ -318,10 +331,11 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   const mapaQuadras = new Map(quadrasTodas.map((r) => [r.id, r]));
   const mapaLogradouros = new Map(logradourosTodos.map((r) => [r.id, r]));
   const mapaCondominios = new Map(condominiosTodos.map((r) => [r.id, r]));
+  const mapaSecoes = new Map(secoesTodas.map((r) => [r.id, r]));
 
   let idsPorColecao = {};
   if (somenteAlterados) {
-    const nomes = ["zonas", "distritos", "tiposImovel", "bairros", "setores", "quadras", "logradouros", "condominios"];
+    const nomes = ["zonas", "distritos", "tiposImovel", "bairros", "setores", "quadras", "logradouros", "condominios", "secoes"];
     const conjuntos = await Promise.all(nomes.map((n) => idsAlteradosDe(n)));
     nomes.forEach((n, i) => { idsPorColecao[n] = conjuntos[i]; });
   }
@@ -334,6 +348,7 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   const quadrasExport = filtrar("quadras", quadrasTodas);
   const logradourosExport = filtrar("logradouros", logradourosTodos);
   const condominiosExport = filtrar("condominios", condominiosTodos);
+  const secoesExport = filtrar("secoes", secoesTodas);
 
   barra.atualizarPercentual(20, "Lendo contribuintes");
   const contribuintesExport = await carregarParaExportacao("contribuintes", somenteAlterados);
@@ -353,13 +368,13 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   }
 
   logExportacao(
-    `Registros a exportar: ${zonasExport.length} zonas, ${distritosExport.length} distritos, ${tiposImovelExport.length} tipos de imóvel, ${bairrosExport.length} bairros, ${setoresExport.length} setores, ${quadrasExport.length} quadras, ${logradourosExport.length} logradouros, ${contribuintesExport.length} contribuintes, ${boletinsExport.length} boletins.`
+    `Registros a exportar: ${zonasExport.length} zonas, ${distritosExport.length} distritos, ${tiposImovelExport.length} tipos de imóvel, ${secoesExport.length} seções, ${bairrosExport.length} bairros, ${setoresExport.length} setores, ${quadrasExport.length} quadras, ${logradourosExport.length} logradouros, ${contribuintesExport.length} contribuintes, ${boletinsExport.length} boletins.`
   );
   const nadaAExportar =
     somenteAlterados &&
     boletinsExport.length === 0 && contribuintesExport.length === 0 && zonasExport.length === 0 && distritosExport.length === 0 &&
     tiposImovelExport.length === 0 && bairrosExport.length === 0 && setoresExport.length === 0 && quadrasExport.length === 0 && logradourosExport.length === 0 &&
-    condominiosExport.length === 0;
+    condominiosExport.length === 0 && secoesExport.length === 0;
   if (nadaAExportar) {
     logExportacao("Nenhum registro foi incluído ou editado manualmente ainda — nada para exportar.");
     mostrarToast("Nenhuma alteração encontrada para exportar.", "info");
@@ -375,6 +390,7 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
   await garantirCodigos("zonas", zonasExport);
   await garantirCodigos("distritos", distritosExport);
   await garantirCodigos("tiposImovel", tiposImovelExport);
+  await garantirCodigos("secoes", secoesExport);
   await garantirCodigos("bairros", bairrosExport);
   await garantirCodigos("setores", setoresExport);
   await garantirCodigos("quadras", quadrasExport);
@@ -395,8 +411,8 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
 
   return {
     cnpj,
-    zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport, contribuintesExport, condominiosExport, boletinsExport,
-    mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras, mapaLogradouros, mapaContribuintes, mapaCondominios,
+    zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport, contribuintesExport, condominiosExport, secoesExport, boletinsExport,
+    mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras, mapaLogradouros, mapaContribuintes, mapaCondominios, mapaSecoes,
     sqDe,
   };
 }
@@ -465,8 +481,8 @@ async function executarExportacaoLegado(somenteAlterados) {
     if (!dados) return;
     const {
       cnpj, zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport,
-      contribuintesExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
-      mapaLogradouros, mapaContribuintes, sqDe,
+      contribuintesExport, secoesExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
+      mapaLogradouros, mapaContribuintes, mapaSecoes, sqDe,
     } = dados;
 
     barra.atualizarPercentual(70, "Montando planilha");
@@ -558,7 +574,7 @@ async function executarExportacaoLegado(somenteAlterados) {
     adicionarAba(
       "SECAO",
       [null, "nu_cnpj", "sq_secao", "nm_secao", "nu_secao"],
-      [] // não existe cadastro de Seção no app (também não existia na importação original)
+      secoesExport.map((r) => [null, cnpj, r.sqLegado, textoOuVazio(r.nome), ""])
     );
 
     const linhasImovel = [];
@@ -570,6 +586,7 @@ async function executarExportacaoLegado(somenteAlterados) {
       const sqSetor = await sqDe("setores", mapaSetores, r.setorId);
       const sqDistrito = await sqDe("distritos", mapaDistritos, r.distritoId);
       const sqTipoImovel = await sqDe("tiposImovel", mapaTiposImovel, r.tipoImovelId);
+      const sqSecao = await sqDe("secoes", mapaSecoes, r.secaoId);
       const sqContribuinte = r.proprietarioContribuinteId ? await obterOuGerarCodigoLegado("contribuintes", mapaContribuintes.get(r.proprietarioContribuinteId)) : "";
       const sqContribuinteResponsavel =
         !r.mesmoResponsavelProprietario && r.responsavelContribuinteId
@@ -586,7 +603,7 @@ async function executarExportacaoLegado(somenteAlterados) {
         "", "", dataIsoParaDate(r.dataCadastro), dataIsoParaDate(r.dataAtualizacao), textoOuVazio(r.medidorAgua), textoOuVazio(r.medidorEnergia),
         r.corrMesmoProprietario ? textoOuVazio(r.cep) : textoOuVazio(r.corrCep), "", sqDistrito, sqContribuinteResponsavel,
         "", "", "", "", numeroOuVazio(r.latitude), numeroOuVazio(r.longitude), "", "",
-        "", "", "", "", "", "", numeroOuVazio(r.dimAreaUnidade), "", "",
+        "", "", "", sqSecao, "", "", numeroOuVazio(r.dimAreaUnidade), "", "",
         "", textoOuVazio(r.usuarioAtualizacaoNome), dataIsoParaDate(r.dataAtualizacao), "", "", numeroOuVazio(r.dimNumeroPavimentos),
         "", "", "", "", "", "", "", "", "",
       ]);
@@ -711,8 +728,8 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
     if (!dados) return;
     const {
       cnpj, zonasExport, distritosExport, tiposImovelExport, bairrosExport, setoresExport, quadrasExport, logradourosExport,
-      contribuintesExport, condominiosExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
-      mapaLogradouros, mapaContribuintes, mapaCondominios, sqDe,
+      contribuintesExport, condominiosExport, secoesExport, boletinsExport, mapaZonas, mapaDistritos, mapaTiposImovel, mapaBairros, mapaSetores, mapaQuadras,
+      mapaLogradouros, mapaContribuintes, mapaCondominios, mapaSecoes, sqDe,
     } = dados;
 
     const avisos = [];
@@ -733,12 +750,12 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
 
     tabelas.TIPO_IMOVEL = {
       campos: ["nu_cnpj", "sq_tipoImovel", "nu_aliquota", "nm_tipoImovel", "ds_formulaIptu", "fl_rural", "ds_formulaValorVenal", "fl_validarTerreno", "fl_validarConstrucao"],
-      linhas: tiposImovelExport.map((r) => ({ nu_cnpj: cnpj, sq_tipoImovel: r.sqLegado, nu_aliquota: "", nm_tipoImovel: r.nome, ds_formulaIptu: "", fl_rural: "", ds_formulaValorVenal: "", fl_validarTerreno: "", fl_validarConstrucao: "" })),
+      linhas: tiposImovelExport.map((r) => ({ nu_cnpj: cnpj, sq_tipoImovel: r.sqLegado, nu_aliquota: "", nm_tipoImovel: r.nome, ds_formulaIptu: "", fl_rural: "", ds_formulaValorVenal: "", fl_validarTerreno: "False", fl_validarConstrucao: "False" })),
     };
 
     tabelas.SECAO = {
       campos: ["nu_cnpj", "sq_secao", "nm_secao", "nu_secao"],
-      linhas: [], // não existe cadastro de Seção no app
+      linhas: secoesExport.map((r) => ({ nu_cnpj: cnpj, sq_secao: r.sqLegado, nm_secao: r.nome, nu_secao: "" })),
     };
 
     tabelas.BAIRRO = {
@@ -821,6 +838,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       const sqDistrito = await sqDe("distritos", mapaDistritos, r.distritoId);
       const sqTipoImovel = await sqDe("tiposImovel", mapaTiposImovel, r.tipoImovelId);
       const sqCondominio = await sqDe("condominios", mapaCondominios, r.condominioId);
+      const sqSecao = await sqDe("secoes", mapaSecoes, r.secaoId);
       const sqContribuinte = r.proprietarioContribuinteId ? await obterOuGerarCodigoLegado("contribuintes", mapaContribuintes.get(r.proprietarioContribuinteId)) : "";
       const sqContribuinteResponsavel =
         !r.mesmoResponsavelProprietario && r.responsavelContribuinteId
@@ -881,7 +899,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
         nu_cepCorrespondencia: r.corrMesmoProprietario ? (r.cep || "") : (r.corrCep || ""), gd_fotoImovel: "", sq_distrito: sqDistrito,
         sq_contribuinteResponsavel: sqContribuinteResponsavel, vl_imovelRural: "", tp_calculoArea: "", qt_areaRural: "", dt_construcao: "",
         nu_latitude: numeroOuVazio(r.latitude), nu_longitude: numeroOuVazio(r.longitude), dt_desmembramento: "", dt_remembramento: "",
-        nu_setorLogradouro: "", nu_quadraLogradouro: "", nu_loteLogradouro: "", sq_secao: "", sq_loteamento: "", sq_face: "",
+        nu_setorLogradouro: "", nu_quadraLogradouro: "", nu_loteLogradouro: "", sq_secao: sqSecao, sq_loteamento: "", sq_face: "",
         vl_areaUnidade: numeroBrOuVazio(r.dimAreaUnidade), nu_apartamento: "", nm_bloco: "", dt_escritura: "",
         nm_revisador: r.usuarioAtualizacaoNome || "", dt_revisao: dataIsoOuVazio(r.dataAtualizacao), dt_desativacao: "", nu_habitese: "",
         nu_pavimentos: numeroOuVazio(r.dimNumeroPavimentos), tp_documentoRegistro: "", nu_processoRegistro: "", dt_habitese: "",

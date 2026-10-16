@@ -2,7 +2,7 @@
 // NÚCLEO DO APP — autenticação, permissões, navegação, utilidades
 // ===================================================================
 
-const VERSAO_APP = "1.12";
+const VERSAO_APP = "1.15";
 document.addEventListener("DOMContentLoaded", () => {
   const elementoLogin = document.getElementById("versao-app-login");
   if (elementoLogin) elementoLogin.textContent = `v${VERSAO_APP}`;
@@ -354,6 +354,7 @@ const ITENS_MENU = [
   { chave: "distritos", rotulo: "Distritos", icone: "🏞️", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
   { chave: "zonas", rotulo: "Zonas", icone: "🧭", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
   { chave: "condominios", rotulo: "Condomínios", icone: "🏢", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
+  { chave: "secoes", rotulo: "Seções", icone: "🧩", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
   { chave: "tipos-imovel", rotulo: "Tipos de Imóvel", icone: "⚙️", modulo: "cadastrosApoio", grupo: "Cadastros de Apoio" },
 
   { chave: "importacao-legado", rotulo: "Importação do Legado", icone: "📥", modulo: null, somenteAdmin: true, grupo: "Administração" },
@@ -470,6 +471,9 @@ function navegarPara(chave) {
       break;
     case "condominios":
       renderizarCadastroApoio(area, "condominios", "Condomínio");
+      break;
+    case "secoes":
+      renderizarCadastroApoio(area, "secoes", "Seção");
       break;
     case "tipos-imovel":
       renderizarCadastroApoio(area, "tiposImovel", "Tipo de Imóvel");
@@ -636,6 +640,7 @@ const ROTULOS_COLECAO_HISTORICO = {
   zonas: "Zona",
   condominios: "Condomínio",
   tiposImovel: "Tipo de Imóvel",
+  secoes: "Seção",
 };
 
 async function registrarHistorico(nomeColecao, documentoId, acao, resumo) {

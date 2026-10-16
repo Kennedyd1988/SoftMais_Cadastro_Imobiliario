@@ -159,11 +159,12 @@ async function abrirEditorBoletim(area, registro) {
 
   area.innerHTML = `<p class="texto-secundario">Carregando cadastros de apoio...</p>`;
 
-  const [logradouros, quadras, condominios, tiposImovel] = await Promise.all([
+  const [logradouros, quadras, condominios, tiposImovel, secoes] = await Promise.all([
     carregarListaCompleta("logradouros"),
     carregarListaCompleta("quadras"),
     carregarListaCompleta("condominios"),
     carregarListaCompleta("tiposImovel"),
+    carregarListaCompleta("secoes"),
   ]);
 
   let coProprietarios = [];
@@ -219,6 +220,8 @@ async function abrirEditorBoletim(area, registro) {
       </div>
       <label>Condomínio</label>
       ${htmlComboBusca("campo-condominio", condominios.find((c) => c.id === r.condominioId)?.nome, "Buscar condomínio (opcional)...")}
+      <label>Seção</label>
+      ${htmlComboBusca("campo-secao", secoes.find((s) => s.id === r.secaoId)?.nome || r.secaoNome, "Buscar seção (opcional)...")}
       <label>Tipo de Imóvel *</label>
       ${htmlComboBusca("campo-tipo-imovel", tiposImovel.find((t) => t.id === r.tipoImovelId)?.nome, "Buscar tipo de imóvel...")}
       <div class="linha-formulario">
@@ -404,6 +407,7 @@ async function abrirEditorBoletim(area, registro) {
   );
 
   ativarComboBusca("campo-condominio", condominios, r.condominioId, () => {});
+  ativarComboBusca("campo-secao", secoes, r.secaoId, () => {});
   ativarComboBusca("campo-tipo-imovel", tiposImovel, r.tipoImovelId, () => {});
 
   // -------- Gerar inscrição imobiliária automaticamente --------
@@ -598,7 +602,7 @@ async function abrirEditorBoletim(area, registro) {
 
   // -------- Salvar --------
   document.getElementById("btn-salvar-boletim")?.addEventListener("click", async (evento) => {
-    await salvarBoletim(evento.target, area, registro, { logradouros, quadras, condominios, tiposImovel, coProprietarios });
+    await salvarBoletim(evento.target, area, registro, { logradouros, quadras, condominios, tiposImovel, secoes, coProprietarios });
   });
 }
 
@@ -653,6 +657,7 @@ async function salvarBoletim(botao, area, registro, cadastros) {
     const logradouro = cadastros.logradouros.find((l) => l.id === campoLogradouroValor.value);
     const quadra = cadastros.quadras.find((q) => q.id === campoQuadraValor.value);
     const condominio = cadastros.condominios.find((c) => c.id === document.getElementById("campo-condominio-valor").value);
+    const secao = cadastros.secoes.find((s) => s.id === document.getElementById("campo-secao-valor").value);
     const tipoImovel = cadastros.tiposImovel.find((t) => t.id === campoTipoImovelValor.value);
     const mesmoResponsavel = document.getElementById("campo-mesmo-responsavel").checked;
     const loteFormatado = preencherZeros(document.getElementById("campo-lote").value, 4);
@@ -674,6 +679,7 @@ async function salvarBoletim(botao, area, registro, cadastros) {
       lote: loteFormatado, unidade: unidadeFormatada,
       condominioId: condominio?.id || null, condominioNome: condominio?.nome || "",
       tipoImovelId: tipoImovel.id, tipoImovelNome: tipoImovel.nome,
+      secaoId: secao?.id || null, secaoNome: secao?.nome || "",
       medidorAgua: document.getElementById("campo-medidor-agua").value.trim(),
       medidorEnergia: document.getElementById("campo-medidor-energia").value.trim(),
 
