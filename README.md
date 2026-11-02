@@ -666,3 +666,9 @@ atualização em campo:
   avisos; (2) número vazio ou "sn/s.n." sai como `S/N` (o Contabilis
   recusa `nu_logradouro` nulo); (3) `sq_bairro` usa o bairro do logradouro
   quando o boletim não tem bairro, com aviso se continuar vazio.
+- **v1.24** — AREA_IMOVEL: medidas em branco passam a sair `0,00` (o
+  Contabilis recusava vazio com "converter nvarchar para numeric").
+- **v1.25** — AREA_IMOVEL: `fl_irregular` passa a sair `0` (vazio causava
+  "converter nvarchar para numeric" em todos os registros; o banco do
+  Contabilis guarda 0/1). Substitui a hipótese das medidas da v1.24, que
+  segue valendo como proteção.

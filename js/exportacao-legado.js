@@ -352,6 +352,12 @@ function numeroBrOuVazio(valor) {
   return numero.toFixed(2).replace(".", ",");
 }
 
+// Colunas numéricas do AREA_IMOVEL não aceitam texto vazio: o SQL Server
+// falha com "converter nvarchar para numeric". Medida em branco vai como 0,00.
+function numeroBrOuZero(valor) {
+  return numeroBrOuVazio(valor) || "0,00";
+}
+
 /** "AAAA-MM-DD" a partir da data ISO interna — formato mais seguro pra um XML de integração. */
 function dataIsoOuVazio(iso) {
   return iso || "";
@@ -1245,12 +1251,14 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       if (temArea) {
         linhasArea.push({
           nu_cnpj: cnpj, sq_imovel: sqImovel, sq_areaImovel: sqImovel,
-          vl_frenteTerreno: numeroBrOuVazio(r.areaTerrenoFrente), vl_fundoTerreno: numeroBrOuVazio(r.areaTerrenoFundo),
-          vl_ladoEsquerdoTerreno: numeroBrOuVazio(r.areaTerrenoLadoEsquerdo), vl_ladoDireitoTerreno: numeroBrOuVazio(r.areaTerrenoLadoDireito),
-          vl_frenteConstrucao: numeroBrOuVazio(r.areaConstruidaFrente), vl_fundoConstrucao: numeroBrOuVazio(r.areaConstruidaFundo),
-          vl_ladoEsquerdoConstrucao: numeroBrOuVazio(r.areaConstruidaLadoEsquerdo), vl_ladoDireitoConstrucao: numeroBrOuVazio(r.areaConstruidaLadoDireito),
-          nm_areaImovel: "PRINCIPAL", vl_totalTerreno: numeroBrOuVazio(r.areaTerrenoTotal), vl_totalConstruido: numeroBrOuVazio(r.areaConstruidaTotal),
-          fl_irregular: "",
+          vl_frenteTerreno: numeroBrOuZero(r.areaTerrenoFrente), vl_fundoTerreno: numeroBrOuZero(r.areaTerrenoFundo),
+          vl_ladoEsquerdoTerreno: numeroBrOuZero(r.areaTerrenoLadoEsquerdo), vl_ladoDireitoTerreno: numeroBrOuZero(r.areaTerrenoLadoDireito),
+          vl_frenteConstrucao: numeroBrOuZero(r.areaConstruidaFrente), vl_fundoConstrucao: numeroBrOuZero(r.areaConstruidaFundo),
+          vl_ladoEsquerdoConstrucao: numeroBrOuZero(r.areaConstruidaLadoEsquerdo), vl_ladoDireitoConstrucao: numeroBrOuZero(r.areaConstruidaLadoDireito),
+          nm_areaImovel: "PRINCIPAL", vl_totalTerreno: numeroBrOuZero(r.areaTerrenoTotal), vl_totalConstruido: numeroBrOuZero(r.areaConstruidaTotal),
+          // Vazio quebra a importação ("nvarchar para numeric"): no banco do
+          // Contabilis a coluna é numérica e os cadastros normais gravam 0.
+          fl_irregular: "0",
         });
       }
     }
