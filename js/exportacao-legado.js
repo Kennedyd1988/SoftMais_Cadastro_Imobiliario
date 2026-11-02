@@ -107,6 +107,30 @@
 
 const BASE_CODIGO_LEGADO_NOVO = 900000;
 
+/** Valida CPF (11 dígitos) ou CNPJ (14) pelos dígitos verificadores. */
+function cpfCnpjValido(texto) {
+  const d = String(texto || "").replace(/\D/g, "");
+  if (/^(\d)\1+$/.test(d)) return false;
+  if (d.length === 11) {
+    for (const n of [9, 10]) {
+      let soma = 0;
+      for (let i = 0; i < n; i++) soma += Number(d[i]) * (n + 1 - i);
+      if (((soma * 10) % 11) % 10 !== Number(d[n])) return false;
+    }
+    return true;
+  }
+  if (d.length === 14) {
+    for (const n of [12, 13]) {
+      let soma = 0, peso = n - 7;
+      for (let i = 0; i < n; i++) { soma += Number(d[i]) * peso; peso = peso === 2 ? 9 : peso - 1; }
+      const resto = soma % 11;
+      if ((resto < 2 ? 0 : 11 - resto) !== Number(d[n])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 // Formatos vistos nos exemplos reais do Contabilis: inscrição só com
 // dígitos (ex: 01010010006001), lote/unidade/quadra sem zeros à esquerda
 // ("6", "1"), CEP só com dígitos.
@@ -1099,7 +1123,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       linhas: contribuintesExport.map((r) => ({
         nm_contribuinte: r.nome, sq_contribuinte: r.codigoLegado, nu_cpfCnpjContribuinte: r.cpfCnpjNormalizado || apenasDigitos(r.cpfCnpj),
         nu_pis: "", ds_logradouro: r.endereco || "", ds_bairro: r.bairro || "", nu_logradouro: "", ds_complemento: "", ds_email: r.email || "",
-        nu_cep: r.cep || "", nu_telefone: r.telefone || "", nu_celular: r.celular || "", cd_municipio: "", nu_cnpj: cnpj, sq_logradouro: "", sq_bairro: "",
+        nu_cep: apenasDigitos(r.cep), nu_telefone: r.telefone || "", nu_celular: r.celular || "", cd_municipio: "", nu_cnpj: cnpj, sq_logradouro: "", sq_bairro: "",
         cd_pais: "76" /* Brasil — assumido, o app não distingue estrangeiros */, nu_rg: "", nu_cnh: "", tp_cnh: "", nu_crea: "", ds_transferencia: "",
         sg_orgaoExpedidorRg: "", nu_nire: "", dt_nire: "", dt_nascimento: "", dt_validadeCnh: "", tp_orgaoClasse: "",
       })),
@@ -1243,6 +1267,41 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       campos: ["nu_cnpj", "sq_imovel", "sq_tesdada", "vl_testada", "fl_principal", "sq_logradouro"],
       linhas: linhasTestada,
     };
+
+    // -------- Conferências finais (viram avisos no log e no relatório) --------
+    // 1) Dois cadastros do app com o MESMO código do Contabilis (ex: o
+    //    contribuinte antigo + o digitado no boletim, depois vinculados ao
+    //    mesmo código) geravam duas linhas com a mesma chave no XML.
+    {
+      const porCodigo = new Map();
+      tabelas.CONTRIBUINTE.linhas.forEach((linha) => {
+        const atual = porCodigo.get(linha.sq_contribuinte);
+        if (!atual) { porCodigo.set(linha.sq_contribuinte, linha); return; }
+        const [mantida, outra] = linha.ds_logradouro && !atual.ds_logradouro ? [linha, atual] : [atual, linha];
+        Object.keys(outra).forEach((k) => { if (!mantida[k] && outra[k]) mantida[k] = outra[k]; });
+        porCodigo.set(linha.sq_contribuinte, mantida);
+        avisos.push(`Contribuinte ${linha.sq_contribuinte} (${mantida.nm_contribuinte}): há 2 cadastros no app com o mesmo código — saiu uma linha só, com os dados dos dois. Apague o duplicado no app.`);
+      });
+      tabelas.CONTRIBUINTE.linhas = [...porCodigo.values()];
+    }
+    // 2) CPF/CNPJ inválido e CPF repetido em códigos diferentes.
+    const codigosPorCpf = new Map();
+    tabelas.CONTRIBUINTE.linhas.forEach((linha) => {
+      const doc = linha.nu_cpfCnpjContribuinte;
+      if (!doc) { avisos.push(`Contribuinte ${linha.sq_contribuinte} (${linha.nm_contribuinte}): sem CPF/CNPJ.`); return; }
+      if (!cpfCnpjValido(doc)) avisos.push(`Contribuinte ${linha.sq_contribuinte} (${linha.nm_contribuinte}): CPF/CNPJ "${doc}" inválido (dígitos errados ou tamanho incorreto).`);
+      if (!codigosPorCpf.has(doc)) codigosPorCpf.set(doc, []);
+      codigosPorCpf.get(doc).push(`${linha.sq_contribuinte} ${linha.nm_contribuinte}`);
+    });
+    codigosPorCpf.forEach((lista, doc) => { if (lista.length > 1) avisos.push(`CPF/CNPJ ${doc} repetido em contribuintes diferentes: ${lista.join(" | ")}.`); });
+    // 3) Inscrição imobiliária repetida entre imóveis do arquivo.
+    const imoveisPorInscricao = new Map();
+    linhasImovel.forEach((linha) => {
+      if (!linha.nu_publico) return;
+      if (!imoveisPorInscricao.has(linha.nu_publico)) imoveisPorInscricao.set(linha.nu_publico, []);
+      imoveisPorInscricao.get(linha.nu_publico).push(linha.sq_imovel);
+    });
+    imoveisPorInscricao.forEach((lista, inscricao) => { if (lista.length > 1) avisos.push(`Inscrição ${inscricao} repetida nos imóveis ${lista.join(", ")} — pode ser imóvel duplicado no app.`); });
 
     // -------- Gera um .xml por tabela, nessa ordem (respeita as dependências — ver cabeçalho do arquivo) --------
     barra.atualizarPercentual(90, "Compactando arquivos XML");

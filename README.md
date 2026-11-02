@@ -646,3 +646,16 @@ atualização em campo:
   têm esse campo, então a lista vinha vazia e o `origemLegadoId` dos
   imóveis (900001+) nunca era apagado. Agora lê a coleção por ID (em
   lotes), que funciona para qualquer coleção.
+- **v1.21** — Conferências automáticas na exportação XML (viram avisos
+  no log e na aba RESUMO do relatório): contribuintes com o mesmo código
+  do Contabilis (dois cadastros no app vinculados ao mesmo código) saem
+  numa linha só; CPF/CNPJ inválido (dígito verificador), ausente ou
+  repetido em códigos diferentes; inscrição imobiliária repetida entre
+  imóveis. `nu_cep` do CONTRIBUINTE passa a sair só com dígitos.
+- **v1.22** — Nova tela Administração → Conferência de Dados (só
+  administrador, roda só ao clicar em "Verificar"): lista e corrige imóveis
+  com a mesma inscrição (excluir o duplicado), contribuintes com o mesmo
+  CPF/CNPJ (unificar: boletins passam a apontar para o cadastro mantido,
+  campos vazios são completados, o outro é apagado), CPF/CNPJ inválido ou
+  em branco (corrige na hora, validando os dígitos) e boletins sem bairro
+  (usa o bairro do logradouro do boletim). Tudo registra no Histórico.
