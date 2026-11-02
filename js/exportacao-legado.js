@@ -107,6 +107,15 @@
 
 const BASE_CODIGO_LEGADO_NOVO = 900000;
 
+// Formatos vistos nos exemplos reais do Contabilis: inscrição só com
+// dígitos (ex: 01010010006001), lote/unidade/quadra sem zeros à esquerda
+// ("6", "1"), CEP só com dígitos.
+function semZerosAEsquerda(valor) {
+  const texto = String(valor ?? "").trim();
+  if (!/^\d+$/.test(texto)) return texto;
+  return String(parseInt(texto, 10));
+}
+
 // Última sequência JÁ USADA em cada tabela do Contabilis (lida das telas
 // internas do Contabilis em 16/10/2026). Registro novo criado no app
 // recebe o próximo número depois dela, em vez de 900001 — assim o código
@@ -159,7 +168,10 @@ const _promessasCodigoEmAndamento = new Map();
 async function obterOuGerarCodigoLegado(nomeColecao, registro) {
   if (!registro) return "";
   const campo = CAMPO_SQ_POR_COLECAO[nomeColecao];
-  if (registro[campo]) return String(registro[campo]);
+  // Só vale código numérico: um logradouro chegou a ter o NOME digitado
+  // no campo "código legado" e isso saiu como sq_logradouro no XML.
+  // Valor não numérico é tratado como "sem código" e substituído.
+  if (/^\d+$/.test(String(registro[campo] || ""))) return String(registro[campo]);
 
   const chave = `${nomeColecao}:${registro.id}`;
   if (_promessasCodigoEmAndamento.has(chave)) {
@@ -448,6 +460,44 @@ async function coletarDadosExportacao(somenteAlterados, barra) {
     return null;
   }
 
+  // Registro referenciado (por imóvel, quadra, setor, bairro...) que ainda
+  // NÃO tem código do Contabilis ganharia um código novo só na hora de
+  // montar o vínculo — mas sem linha própria no arquivo, e o Contabilis
+  // rejeitaria a importação (vínculo para algo que não existe). Por isso
+  // todo referenciado sem código entra também na sua própria tabela.
+  // Se ele JÁ existe no Contabilis, use "Vincular códigos" antes de exportar.
+  const listasPorColecao = {
+    zonas: [zonasExport, mapaZonas], distritos: [distritosExport, mapaDistritos], tiposImovel: [tiposImovelExport, mapaTiposImovel],
+    secoes: [secoesExport, mapaSecoes], bairros: [bairrosExport, mapaBairros], setores: [setoresExport, mapaSetores],
+    quadras: [quadrasExport, mapaQuadras], logradouros: [logradourosExport, mapaLogradouros], condominios: [condominiosExport, mapaCondominios],
+  };
+  const idsNaLista = {};
+  Object.entries(listasPorColecao).forEach(([colecao, [lista]]) => { idsNaLista[colecao] = new Set(lista.map((r) => r.id)); });
+  const incluidosAutomaticamente = {};
+  function incluirSeSemCodigo(colecao, id) {
+    if (!id) return;
+    const [lista, mapa] = listasPorColecao[colecao];
+    const registro = mapa.get(id);
+    if (!registro || /^\d+$/.test(String(registro[CAMPO_SQ_POR_COLECAO[colecao]] || "")) || idsNaLista[colecao].has(id)) return;
+    lista.push(registro);
+    idsNaLista[colecao].add(id);
+    (incluidosAutomaticamente[colecao] = incluidosAutomaticamente[colecao] || []).push(registro.nome);
+  }
+  boletinsExport.forEach((b) => {
+    incluirSeSemCodigo("logradouros", b.logradouroId); incluirSeSemCodigo("bairros", b.bairroId); incluirSeSemCodigo("quadras", b.quadraId);
+    incluirSeSemCodigo("setores", b.setorId); incluirSeSemCodigo("distritos", b.distritoId); incluirSeSemCodigo("tiposImovel", b.tipoImovelId);
+    incluirSeSemCodigo("condominios", b.condominioId); incluirSeSemCodigo("secoes", b.secaoId);
+  });
+  for (let passada = 0; passada < 3; passada++) { // quadra → setor → distrito; logradouro/bairro → ...
+    [...quadrasExport].forEach((r) => incluirSeSemCodigo("setores", r.setorId));
+    [...setoresExport].forEach((r) => incluirSeSemCodigo("distritos", r.distritoId));
+    [...bairrosExport].forEach((r) => incluirSeSemCodigo("zonas", r.zonaId));
+    [...logradourosExport].forEach((r) => incluirSeSemCodigo("bairros", r.bairroId));
+  }
+  Object.entries(incluidosAutomaticamente).forEach(([colecao, nomes]) => {
+    avisosColeta.push(`${ROTULOS_SEQUENCIA[colecao]}: ${nomes.length} registro(s) sem código do Contabilis foram incluídos no arquivo porque outros registros apontam para eles (${nomes.slice(0, 5).join(", ")}${nomes.length > 5 ? "…" : ""}). Se algum JÁ existe no Contabilis, informe o código em "Vincular códigos" e exporte de novo — senão será duplicado.`);
+  });
+
   barra.atualizarPercentual(55, "Resolvendo códigos legados");
   async function garantirCodigos(nomeColecao, lista) {
     for (const registro of lista) {
@@ -532,6 +582,29 @@ async function renderizarExportacaoLegado(area) {
         </p>
         <div id="campos-sequencias"></div>
         <button class="botao-secundario" id="btn-salvar-sequencias">Salvar sequências</button>
+        <hr style="margin:16px 0">
+        <p class="texto-secundario">
+          <strong>Códigos já gerados pelo app (faixa 900001+):</strong> se nada foi importado no
+          Contabilis ainda, você pode apagá-los — na próxima exportação os registros novos
+          recebem números a partir das sequências acima. <strong>Não faça isso se esses
+          arquivos já foram importados no Contabilis.</strong>
+        </p>
+        <button class="botao-secundario" id="btn-zerar-codigos">Apagar códigos 900001+ gerados pelo app</button>
+      </div>
+    </details>
+    <details class="secao-formulario" style="margin:16px 0">
+      <summary>Vincular códigos do Contabilis a cadastros que já existem lá</summary>
+      <div class="conteudo-secao-formulario">
+        <p class="texto-secundario">
+          Cadastros criados direto no app não têm o código do Contabilis. Se o registro JÁ existe no
+          Contabilis (ex: Distrito, Bairro, Tipo de imóvel), informe o código dele aqui — assim a
+          exportação usa esse código nos vínculos e não cria uma duplicata.
+        </p>
+        <select id="vinculo-tabela">
+          ${Object.keys(ROTULOS_SEQUENCIA).filter((c) => c !== "boletins").map((c) => `<option value="${c}">${ROTULOS_SEQUENCIA[c]}</option>`).join("")}
+        </select>
+        <button class="botao-secundario" id="btn-listar-vinculos">Listar os sem código</button>
+        <div id="lista-vinculos" style="margin-top:12px"></div>
       </div>
     </details>
     <button class="botao-primario" id="btn-gerar-exportacao">⬇️ Gerar arquivo</button>
@@ -561,6 +634,45 @@ async function renderizarExportacaoLegado(area) {
       await colecaoEntidade("controleExportacao").doc("ultimasSequencias").set(valores);
       mostrarToast("Sequências salvas.", "sucesso");
     }, "Salvando...");
+  });
+
+  // -------- Apagar códigos gerados pelo app (faixa 900001+) --------
+  document.getElementById("btn-zerar-codigos").addEventListener("click", (evento) => {
+    if (!window.confirm("Apagar TODOS os códigos 900001+ gerados pelo app? Só faça isso se nenhum arquivo exportado foi importado no Contabilis.")) return;
+    executarComFeedback(evento.target, async () => {
+      let total = 0;
+      for (const colecao of Object.keys(CAMPO_SQ_POR_COLECAO)) {
+        const campo = CAMPO_SQ_POR_COLECAO[colecao];
+        const lista = await carregarListaCompleta(colecao);
+        const geradosPeloApp = lista.filter((r) => /^\d+$/.test(String(r[campo] || "")) && Number(r[campo]) > BASE_CODIGO_LEGADO_NOVO);
+        await commitEmLotes(geradosPeloApp.map((r) => (lote) => lote.update(colecaoEntidade(colecao).doc(r.id), { [campo]: firebase.firestore.FieldValue.delete() })));
+        total += geradosPeloApp.length;
+      }
+      await colecaoEntidade("controleExportacao").doc("contadores").delete();
+      mostrarToast(`${total} código(s) apagado(s). A próxima exportação gera tudo de novo.`, "sucesso");
+    }, "Apagando...");
+  });
+
+  // -------- Vincular códigos do Contabilis --------
+  document.getElementById("btn-listar-vinculos").addEventListener("click", (evento) => {
+    const colecao = document.getElementById("vinculo-tabela").value;
+    const campo = CAMPO_SQ_POR_COLECAO[colecao];
+    executarComFeedback(evento.target, async () => {
+      const lista = (await carregarListaCompleta(colecao)).filter((r) => !/^\d+$/.test(String(r[campo] || "")) || Number(r[campo]) > BASE_CODIGO_LEGADO_NOVO);
+      lista.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+      const container = document.getElementById("lista-vinculos");
+      if (lista.length === 0) { container.innerHTML = `<p class="texto-secundario">Todos os registros dessa tabela já têm código do Contabilis.</p>`; return; }
+      container.innerHTML = `<p class="texto-secundario">${lista.length} registro(s) sem código do Contabilis. Preencha só os que JÁ existem lá.</p>` +
+        lista.map((r) => `<div class="linha-formulario"><div><label>${escaparHtml(r.nome || r.id)}</label><input type="text" inputmode="numeric" data-vinculo="${r.id}" placeholder="código no Contabilis"></div></div>`).join("") +
+        `<button class="botao-secundario" id="btn-salvar-vinculos">Salvar vínculos</button>`;
+      document.getElementById("btn-salvar-vinculos").addEventListener("click", (ev) => {
+        executarComFeedback(ev.target, async () => {
+          const preenchidos = [...container.querySelectorAll("[data-vinculo]")].filter((i) => /^\d+$/.test(i.value.trim()));
+          await commitEmLotes(preenchidos.map((i) => (lote) => lote.update(colecaoEntidade(colecao).doc(i.dataset.vinculo), { [campo]: i.value.trim() })));
+          mostrarToast(`${preenchidos.length} vínculo(s) salvo(s).`, "sucesso");
+        }, "Salvando...");
+      });
+    }, "Carregando...");
   });
 
   document.getElementById("btn-gerar-exportacao").addEventListener("click", (evento) => {
@@ -880,7 +992,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
 
     tabelas.QUADRA = {
       campos: ["nm_quadra", "sq_quadra", "nu_cnpj", "nu_quadra"],
-      linhas: quadrasExport.map((r) => ({ nm_quadra: r.nome, sq_quadra: r.sqLegado, nu_cnpj: cnpj, nu_quadra: r.codigo })),
+      linhas: quadrasExport.map((r) => ({ nm_quadra: String(r.nome || "").replace(/^quadra\s+/i, ""), sq_quadra: r.sqLegado, nu_cnpj: cnpj, nu_quadra: semZerosAEsquerda(r.codigo) })),
     };
 
     tabelas.SETOR_QUADRA = {
@@ -993,7 +1105,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
 
       linhasImovel.push({
         sq_imovel: sqImovel, nu_logradouro: r.numero || "", sq_logradouro: sqLogradouro, ds_complemento: r.complemento || "",
-        nu_publico: r.inscricaoImobiliaria || "", nu_publicoAnterior: r.inscricaoImobiliariaAnterior || "", nu_lote: r.lote || "", nu_unidade: r.unidade || "",
+        nu_publico: apenasDigitos(r.inscricaoImobiliaria), nu_publicoAnterior: apenasDigitos(r.inscricaoImobiliariaAnterior), nu_lote: semZerosAEsquerda(r.lote), nu_unidade: semZerosAEsquerda(r.unidade),
         nu_cnpj: cnpj, sq_tipoImovel: sqTipoImovel, sq_condominio: sqCondominio, sq_bairro: sqBairro, sq_quadra: sqQuadra, sq_setor: sqSetor,
         ds_observacao: r.observacao || "", sq_contribuinte: sqContribuinte, nu_escritura: "", nu_livroRegistro: "", nu_folhaLivroRegistro: "", sq_cartorio: "",
         fl_incidenciaImovel: "1", nu_logradouroCorrespondencia: r.corrMesmoProprietario ? (r.numero || "") : (r.corrNumero || ""),
@@ -1002,7 +1114,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
         ds_bairroCorrespondencia: r.corrMesmoProprietario ? (r.bairroNome || "") : (r.corrBairro || ""),
         cd_pais: "", cd_municipio: "", dt_cadastro: dataIsoOuVazio(r.dataCadastro), dt_alteracao: dataIsoOuVazio(r.dataAtualizacao),
         nu_medidorAgua: r.medidorAgua || "", nu_medidorEnergia: r.medidorEnergia || "",
-        nu_cepCorrespondencia: r.corrMesmoProprietario ? (r.cep || "") : (r.corrCep || ""), gd_fotoImovel: "", sq_distrito: sqDistrito,
+        nu_cepCorrespondencia: apenasDigitos(r.corrMesmoProprietario ? r.cep : r.corrCep), gd_fotoImovel: "", sq_distrito: sqDistrito,
         sq_contribuinteResponsavel: sqContribuinteResponsavel, vl_imovelRural: "", tp_calculoArea: "", qt_areaRural: "", dt_construcao: "",
         nu_latitude: numeroOuVazio(r.latitude), nu_longitude: numeroOuVazio(r.longitude), dt_desmembramento: "", dt_remembramento: "",
         nu_setorLogradouro: "", nu_quadraLogradouro: "", nu_loteLogradouro: "", sq_secao: sqSecao, sq_loteamento: "", sq_face: "",

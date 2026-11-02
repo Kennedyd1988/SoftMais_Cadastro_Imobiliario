@@ -616,3 +616,19 @@ atualização em campo:
   gerado e o informado). Limitação conhecida: no Contabilis uma quadra
   pode pertencer a vários setores (SETOR_QUADRA), e a importação do
   legado guarda só um setor por quadra.
+- **v1.18** — Correções a partir de um relatório de conferência real.
+  (1) Registro referenciado por outro (bairro, quadra, setor, distrito,
+  tipo de imóvel...) que ainda não tinha código do Contabilis ganhava um
+  código novo só no vínculo, sem linha própria no arquivo — a
+  importação no Contabilis falharia. Agora todo referenciado sem código
+  entra também na sua tabela (com aviso no log/relatório). (2) Código
+  legado só vale se for numérico — um logradouro tinha o NOME digitado
+  no campo "código legado" e isso saía como `sq_logradouro`; o campo agora
+  exige só números e texto é tratado como sem código. (3) Formatos como
+  no Contabilis: `nu_publico` só dígitos (14), `nu_lote`/`nu_unidade`/
+  `nu_quadra` sem zeros à esquerda, `nm_quadra` sem o prefixo "Quadra",
+  CEP de correspondência só com dígitos. (4) Tela de exportação ganhou
+  "Vincular códigos do Contabilis" (informar o código de cadastros que já
+  existem lá, evitando duplicata) e "Apagar códigos 900001+ gerados pelo
+  app" (para recomeçar a numeração a partir das sequências do Contabilis,
+  só se nada foi importado ainda).

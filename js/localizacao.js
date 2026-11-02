@@ -376,6 +376,11 @@ async function renderizarLogradouros(area) {
       let valido = true;
       if (!nome) { marcarCampoInvalido(campoNome, "Informe o nome."); valido = false; }
       if (!campoBairroValor.value) { mostrarToast("Selecione o bairro na lista de busca.", "erro"); valido = false; }
+      // O código legado vira o sq_logradouro na exportação — texto aí
+      // (ex: o nome da rua) gerava XML inválido. Só dígitos.
+      const campoCodigoLegado = document.getElementById("campo-codigo-legado");
+      limparCampoInvalido(campoCodigoLegado);
+      if (campoCodigoLegado.value.trim() && !/^\d+$/.test(campoCodigoLegado.value.trim())) { marcarCampoInvalido(campoCodigoLegado, "Use só números (o código do logradouro no Contabilis) ou deixe em branco."); valido = false; }
       if (!valido) return;
 
       await executarComFeedback(botaoSalvar, async () => {
