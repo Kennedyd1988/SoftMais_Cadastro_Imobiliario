@@ -632,3 +632,17 @@ atualização em campo:
   existem lá, evitando duplicata) e "Apagar códigos 900001+ gerados pelo
   app" (para recomeçar a numeração a partir das sequências do Contabilis,
   só se nada foi importado ainda).
+- **v1.19** — Última sequência de Contribuinte corrigida para 11408 (maior
+  `sq_contribuinte` da lista exportada do Contabilis em 02/11/2026; o
+  11397 do print anterior era só a última linha da grade, não o maior).
+  "Vincular códigos" ganhou a opção de enviar uma planilha do Contabilis
+  (nome + `sq_`): o app vincula pelo nome apenas quando ele é único na
+  planilha e no app, mostra a prévia antes de salvar e sugere o maior
+  código como última sequência. Nome repetido nunca é vinculado
+  automaticamente (homônimos — na lista de contribuintes do Contabilis há
+  297 nomes repetidos).
+- **v1.20** — Corrigido o botão "Apagar códigos 900001+": ele usava
+  `carregarListaCompleta`, que ordena por `nomeNormalizado`; boletins não
+  têm esse campo, então a lista vinha vazia e o `origemLegadoId` dos
+  imóveis (900001+) nunca era apagado. Agora lê a coleção por ID (em
+  lotes), que funciona para qualquer coleção.

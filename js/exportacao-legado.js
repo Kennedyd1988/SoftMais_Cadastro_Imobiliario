@@ -126,7 +126,7 @@ const ULTIMA_SEQUENCIA_CONTABILIS_PADRAO = {
   bairros: 31,
   quadras: 40,
   logradouros: 486,
-  contribuintes: 11397,
+  contribuintes: 11408, // maior sq_contribuinte da lista exportada do Contabilis em 02/11/2026 (o print de 16/10 mostrava 11397 por ser só o último da grade)
   boletins: 1267,
 };
 const ROTULOS_SEQUENCIA = {
@@ -604,6 +604,13 @@ async function renderizarExportacaoLegado(area) {
           ${Object.keys(ROTULOS_SEQUENCIA).filter((c) => c !== "boletins").map((c) => `<option value="${c}">${ROTULOS_SEQUENCIA[c]}</option>`).join("")}
         </select>
         <button class="botao-secundario" id="btn-listar-vinculos">Listar os sem código</button>
+        <p class="texto-secundario" style="margin-top:12px">
+          Ou envie uma planilha exportada do Contabilis (coluna do nome + coluna <code>sq_...</code>):
+          o app liga pelo nome — só quando o nome é único na planilha E no app — e mostra o que
+          vai vincular antes de salvar. Também mostra o maior código da planilha.
+        </p>
+        <input type="file" id="vinculo-planilha" accept=".xlsx,.xls,.csv">
+        <button class="botao-secundario" id="btn-vincular-planilha">Vincular pela planilha</button>
         <div id="lista-vinculos" style="margin-top:12px"></div>
       </div>
     </details>
@@ -643,7 +650,10 @@ async function renderizarExportacaoLegado(area) {
       let total = 0;
       for (const colecao of Object.keys(CAMPO_SQ_POR_COLECAO)) {
         const campo = CAMPO_SQ_POR_COLECAO[colecao];
-        const lista = await carregarListaCompleta(colecao);
+        // NÃO usar carregarListaCompleta aqui: ela ordena por nomeNormalizado e
+        // boletins não têm esse campo — voltava lista vazia e os códigos dos
+        // imóveis (origemLegadoId 900001+) nunca eram apagados (bug da v1.18).
+        const lista = await buscarColecaoEmLotes(colecaoEntidade(colecao).orderBy(firebase.firestore.FieldPath.documentId()));
         const geradosPeloApp = lista.filter((r) => /^\d+$/.test(String(r[campo] || "")) && Number(r[campo]) > BASE_CODIGO_LEGADO_NOVO);
         await commitEmLotes(geradosPeloApp.map((r) => (lote) => lote.update(colecaoEntidade(colecao).doc(r.id), { [campo]: firebase.firestore.FieldValue.delete() })));
         total += geradosPeloApp.length;
@@ -673,6 +683,57 @@ async function renderizarExportacaoLegado(area) {
         }, "Salvando...");
       });
     }, "Carregando...");
+  });
+
+  document.getElementById("btn-vincular-planilha").addEventListener("click", (evento) => {
+    const colecao = document.getElementById("vinculo-tabela").value;
+    const campo = CAMPO_SQ_POR_COLECAO[colecao];
+    const arquivo = document.getElementById("vinculo-planilha").files[0];
+    if (!arquivo) { mostrarToast("Escolha a planilha primeiro.", "erro"); return; }
+    executarComFeedback(evento.target, async () => {
+      const livro = XLSX.read(await arquivo.arrayBuffer());
+      const linhas = XLSX.utils.sheet_to_json(livro.Sheets[livro.SheetNames[0]], { header: 1, defval: "" });
+      const cabecalho = linhas[0].map((c) => String(c).trim().toLowerCase());
+      const colCodigo = cabecalho.findIndex((c) => c.startsWith("sq_"));
+      const colNome = cabecalho.findIndex((c) => c.startsWith("nm_") || c.startsWith("nome"));
+      if (colCodigo < 0 || colNome < 0) { mostrarToast("Não achei as colunas de nome (nm_...) e código (sq_...) na primeira linha.", "erro"); return; }
+      const porNome = new Map();
+      let maiorCodigo = 0;
+      linhas.slice(1).forEach((l) => {
+        const codigo = String(l[colCodigo]).trim();
+        if (!/^\d+$/.test(codigo)) return;
+        maiorCodigo = Math.max(maiorCodigo, Number(codigo));
+        const chave = normalizarTexto(String(l[colNome]));
+        if (!porNome.has(chave)) porNome.set(chave, new Set());
+        porNome.get(chave).add(codigo);
+      });
+      const locais = (await carregarListaCompleta(colecao)).filter((r) => !/^\d+$/.test(String(r[campo] || "")) || Number(r[campo]) > BASE_CODIGO_LEGADO_NOVO);
+      const locaisPorNome = new Map();
+      locais.forEach((r) => { const chave = normalizarTexto(r.nome || ""); locaisPorNome.set(chave, (locaisPorNome.get(chave) || 0) + 1); });
+      const aVincular = [];
+      let ambiguos = 0;
+      locais.forEach((r) => {
+        const chave = normalizarTexto(r.nome || "");
+        const codigos = porNome.get(chave);
+        if (!codigos) return;
+        if (codigos.size === 1 && locaisPorNome.get(chave) === 1) aVincular.push({ id: r.id, nome: r.nome, codigo: [...codigos][0] });
+        else ambiguos++;
+      });
+      // Sugere a sequência: maior código da planilha (se maior que o informado).
+      const campoSeq = document.querySelector(`[data-sequencia="${colecao}"]`);
+      if (campoSeq && maiorCodigo > Number(campoSeq.value || 0)) campoSeq.value = String(maiorCodigo);
+      const container = document.getElementById("lista-vinculos");
+      container.innerHTML = `<p class="texto-secundario">Maior código na planilha: <strong>${maiorCodigo}</strong> (já sugerido em "Última sequência" acima — clique em "Salvar sequências" para gravar).
+        ${locais.length} registro(s) sem código no app: <strong>${aVincular.length}</strong> com nome único dos dois lados, ${ambiguos} com nome repetido (não vinculados — use a lista manual), ${locais.length - aVincular.length - ambiguos} sem correspondência (serão tratados como novos).</p>` +
+        aVincular.map((v) => `<div class="texto-secundario">${escaparHtml(v.nome)} → ${v.codigo}</div>`).join("") +
+        (aVincular.length > 0 ? `<button class="botao-secundario" id="btn-confirmar-vinculos-planilha">Confirmar ${aVincular.length} vínculo(s)</button>` : "");
+      document.getElementById("btn-confirmar-vinculos-planilha")?.addEventListener("click", (ev) => {
+        executarComFeedback(ev.target, async () => {
+          await commitEmLotes(aVincular.map((v) => (lote) => lote.update(colecaoEntidade(colecao).doc(v.id), { [campo]: v.codigo })));
+          mostrarToast(`${aVincular.length} vínculo(s) salvo(s).`, "sucesso");
+        }, "Salvando...");
+      });
+    }, "Lendo planilha...");
   });
 
   document.getElementById("btn-gerar-exportacao").addEventListener("click", (evento) => {
