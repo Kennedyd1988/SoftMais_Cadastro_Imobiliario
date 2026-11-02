@@ -349,13 +349,15 @@ function numeroBrOuVazio(valor) {
   if (valor === null || valor === undefined || valor === "") return "";
   const numero = Number(valor);
   if (isNaN(numero)) return "";
-  return numero.toFixed(2).replace(".", ",");
+  // Ponto decimal: confirmado importando no Contabilis — com vírgula ("11,00")
+  // o AREA_IMOVEL falhava com "converter nvarchar para numeric".
+  return numero.toFixed(2);
 }
 
 // Colunas numéricas do AREA_IMOVEL não aceitam texto vazio: o SQL Server
 // falha com "converter nvarchar para numeric". Medida em branco vai como 0,00.
 function numeroBrOuZero(valor) {
-  return numeroBrOuVazio(valor) || "0,00";
+  return numeroBrOuVazio(valor) || "0.00";
 }
 
 /** "AAAA-MM-DD" a partir da data ISO interna — formato mais seguro pra um XML de integração. */

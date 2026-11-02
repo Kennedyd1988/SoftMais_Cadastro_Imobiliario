@@ -672,3 +672,7 @@ atualização em campo:
   "converter nvarchar para numeric" em todos os registros; o banco do
   Contabilis guarda 0/1). Substitui a hipótese das medidas da v1.24, que
   segue valendo como proteção.
+- **v1.26** — Números do XML Contabilis passam a usar ponto decimal
+  (`11.00`). Confirmado na importação real: com vírgula o AREA_IMOVEL
+  falhava com "converter nvarchar para numeric". Vale para todas as
+  tabelas (testada, quota do proprietário, áreas, etc.).
