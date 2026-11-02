@@ -659,3 +659,10 @@ atualização em campo:
   campos vazios são completados, o outro é apagado), CPF/CNPJ inválido ou
   em branco (corrige na hora, validando os dígitos) e boletins sem bairro
   (usa o bairro do logradouro do boletim). Tudo registra no Histórico.
+- **v1.23** — Correções da exportação XML após a importação real no
+  Contabilis: (1) imóveis que já existem lá (ids `legado_`) saem dos
+  XMLs de IMOVEL/AREA_IMOVEL/PROPRIETARIO/TESTADA, porque a importação só
+  insere e dava "Registro já existente 'Imovel'" — ficam listados nos
+  avisos; (2) número vazio ou "sn/s.n." sai como `S/N` (o Contabilis
+  recusa `nu_logradouro` nulo); (3) `sq_bairro` usa o bairro do logradouro
+  quando o boletim não tem bairro, com aviso se continuar vazio.

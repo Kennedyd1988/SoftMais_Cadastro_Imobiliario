@@ -134,6 +134,14 @@ function cpfCnpjValido(texto) {
 // Formatos vistos nos exemplos reais do Contabilis: inscrição só com
 // dígitos (ex: 01010010006001), lote/unidade/quadra sem zeros à esquerda
 // ("6", "1"), CEP só com dígitos.
+// Número vazio ou variações de "sem número" (sn, s/n, S.N.) viram "S/N",
+// padrão do legado e exigido (NOT NULL) pelo Contabilis.
+function numeroLogradouroContabilis(valor) {
+  const texto = String(valor == null ? "" : valor).trim();
+  if (!texto || /^s[\/.\s-]*n\.?$/i.test(texto)) return "S/N";
+  return texto;
+}
+
 function semZerosAEsquerda(valor) {
   const texto = String(valor ?? "").trim();
   if (!/^\d+$/.test(texto)) return texto;
@@ -1134,8 +1142,21 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
     const linhasProprietario = [];
     const linhasTestada = [];
     for (const r of boletinsExport) {
+      // A importação do Contabilis só INSERE: imóvel que já existe lá (veio do
+      // legado) dá "Registro já existente 'Imovel'" e trava o lote. Por isso
+      // ficam fora de IMOVEL/AREA_IMOVEL/PROPRIETARIO/TESTADA; as alterações
+      // nele precisam ser feitas direto no Contabilis.
+      if (String(r.id).startsWith("legado_")) {
+        avisos.push(`Imóvel ${r.origemLegadoId} (${r.inscricaoImobiliaria || "sem inscrição"}) já existe no Contabilis — NÃO entrou nos XMLs de imóvel (a importação só insere). Altere-o direto no Contabilis.`);
+        continue;
+      }
       const sqLogradouro = await sqDe("logradouros", mapaLogradouros, r.logradouroId);
-      const sqBairro = await sqDe("bairros", mapaBairros, r.bairroId);
+      // Bairro: o do boletim; se vazio, o do logradouro (o Contabilis recusa
+      // sq_bairro nulo — "Cannot insert the value NULL").
+      const logradouroDoBoletim = mapaLogradouros.get(r.logradouroId);
+      const sqBairro = await sqDe("bairros", mapaBairros, r.bairroId || (logradouroDoBoletim && logradouroDoBoletim.bairroId));
+      // Número: o Contabilis exige nu_logradouro; o legado usa "S/N" quando não há.
+      const numeroExport = numeroLogradouroContabilis(r.numero);
       const sqQuadra = await sqDe("quadras", mapaQuadras, r.quadraId);
       const sqSetor = await sqDe("setores", mapaSetores, r.setorId);
       const sqDistrito = await sqDe("distritos", mapaDistritos, r.distritoId);
@@ -1148,6 +1169,7 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
           ? await obterOuGerarCodigoLegado("contribuintes", mapaContribuintes.get(r.responsavelContribuinteId))
           : "";
       const sqImovel = r.origemLegadoId;
+      if (!sqBairro) avisos.push(`Imóvel ${sqImovel}: sem bairro (nem no boletim nem no logradouro) — o Contabilis vai recusar. Corrija na Conferência de Dados.`);
 
       // -------- PROPRIETARIO: proprietário principal + "Demais Proprietários" --------
       // O app só grava o percentual explícito dos demais proprietários
@@ -1189,11 +1211,11 @@ async function executarExportacaoContabilisXml(somenteAlterados) {
       });
 
       linhasImovel.push({
-        sq_imovel: sqImovel, nu_logradouro: r.numero || "", sq_logradouro: sqLogradouro, ds_complemento: r.complemento || "",
+        sq_imovel: sqImovel, nu_logradouro: numeroExport, sq_logradouro: sqLogradouro, ds_complemento: r.complemento || "",
         nu_publico: apenasDigitos(r.inscricaoImobiliaria), nu_publicoAnterior: apenasDigitos(r.inscricaoImobiliariaAnterior), nu_lote: semZerosAEsquerda(r.lote), nu_unidade: semZerosAEsquerda(r.unidade),
         nu_cnpj: cnpj, sq_tipoImovel: sqTipoImovel, sq_condominio: sqCondominio, sq_bairro: sqBairro, sq_quadra: sqQuadra, sq_setor: sqSetor,
         ds_observacao: r.observacao || "", sq_contribuinte: sqContribuinte, nu_escritura: "", nu_livroRegistro: "", nu_folhaLivroRegistro: "", sq_cartorio: "",
-        fl_incidenciaImovel: "1", nu_logradouroCorrespondencia: r.corrMesmoProprietario ? (r.numero || "") : (r.corrNumero || ""),
+        fl_incidenciaImovel: "1", nu_logradouroCorrespondencia: r.corrMesmoProprietario ? numeroExport : (r.corrNumero || ""),
         ds_logradouroCorrespondencia: r.corrMesmoProprietario ? (r.logradouroNome || "") : (r.corrEndereco || ""),
         ds_complementoCorrespondencia: r.corrMesmoProprietario ? (r.complemento || "") : (r.corrComplemento || ""),
         ds_bairroCorrespondencia: r.corrMesmoProprietario ? (r.bairroNome || "") : (r.corrBairro || ""),
